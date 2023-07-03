@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>waverider_msgs</name>
+  <version>0.0.0</version>
+  <description>Message definitions for waverider's ROS interfaces.</description>
+
+  <maintainer email="victorr@ethz.ch">Victor Reijgwart</maintainer>
+  <license>BSD</license>
+  <url>https://github.com/ethz-asl/waverider</url>
+
+  <author email="victorr@ethz.ch">Victor Reijgwart</author>
+  <author email="michael.pantic@mavt.ethz.ch">Michael Pantic</author>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <buildtool_depend>catkin_simple</buildtool_depend>
+
+  <depend>message_generation</depend>
+  <depend>message_runtime</depend>
+  <depend>std_msgs</depend>
+</package>

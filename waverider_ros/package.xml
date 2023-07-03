@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>waverider_ros</name>
+  <version>0.0.0</version>
+  <description>ROS interface for waverider.</description>
+
+  <maintainer email="victorr@ethz.ch">Victor Reijgwart</maintainer>
+  <license>BSD</license>
+  <url>https://github.com/ethz-asl/waverider</url>
+
+  <author email="victorr@ethz.ch">Victor Reijgwart</author>
+  <author email="michael.pantic@mavt.ethz.ch">Michael Pantic</author>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <buildtool_depend>catkin_simple</buildtool_depend>
+
+  <depend>roscpp</depend>
+  <depend>wavemap_ros</depend>
+  <depend>waverider_msgs</depend>
+</package>
