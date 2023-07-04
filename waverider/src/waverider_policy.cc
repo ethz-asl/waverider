@@ -1,0 +1,35 @@
+#include "waverider/waverider_policy.h"
+
+namespace waverider {
+rmpcpp::PolicyValue<3> WaveriderPolicy::evaluateAt(const rmpcpp::State<3>& x) {
+  if (!isReady()) {
+    return {Eigen::Vector3d::Zero(), Eigen::Matrix3d::Zero()};
+  }
+
+  const Eigen::Vector3f x_pos = x.pos_.cast<float>();
+  const Eigen::Vector3f x_vel = x.vel_.cast<float>();
+
+  // get all cells where we should attach a policy
+  const auto& policy_cells = obstacle_filter_.getObstacleCells();
+
+  std::vector<rmpcpp::PolicyValue<3>> all_policies;
+  for (size_t i = 0; i < policy_cells.cell_widths.size(); i++) {
+    if (i == 1 || run_all_levels_) {
+      ParallelizedPolicy pol_generator(policy_cells.centers[i].size(),
+                                       policy_tuning_);
+      pol_generator.setR(policy_cells.cell_widths[i]);
+
+      pol_generator.init(policy_cells.centers[i], x_pos, x_vel);
+      all_policies.emplace_back(pol_generator.getPolicy());
+    }
+  }
+
+  const auto avoidance_policy = rmpcpp::PolicyValue<3>::sum(all_policies);
+
+  rmpcpp::PolicyValue<3> scaled_avoidance = {avoidance_policy.f_,
+                                             avoidance_policy.A_};
+  std::cout << scaled_avoidance.f_.transpose() << std::endl;
+  std::cout << scaled_avoidance.A_ << std::endl;
+  return scaled_avoidance;
+}
+}  // namespace waverider

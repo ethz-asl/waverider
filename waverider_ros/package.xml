@@ -16,5 +16,8 @@
 
   <depend>roscpp</depend>
   <depend>wavemap_ros</depend>
-  <depend>waverider_msgs</depend>
+  <depend>waverider</depend>
+  <depend>visualization_msgs</depend>
+  <depend>omav_msgs</depend>
+  <depend>mav_reactive_planning</depend>
 </package>
