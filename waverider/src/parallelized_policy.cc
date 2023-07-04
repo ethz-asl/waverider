@@ -2,11 +2,7 @@
 
 namespace waverider {
 ParallelizedPolicy::ParallelizedPolicy(uint num_policies, PolicyTuning tuning)
-    : tuning_(tuning) {
-  f.setZero(Eigen::NoChange_t::NoChange, num_policies);
-  A.setZero(Eigen::NoChange_t::NoChange, num_policies);
-  num_policies_ = num_policies;
-}
+    : tuning_(tuning), num_policies_(num_policies) {}
 
 void ParallelizedPolicy::init(const std::vector<Eigen::Vector3f>& x_obs,
                               const Eigen::Vector3f& x,
@@ -46,8 +42,6 @@ void ParallelizedPolicy::init(const std::vector<Eigen::Vector3f>& x_obs,
       f_temp -= f_damp;
     }
 
-    f.col(i) = f_temp;
-
     // calculation of metric
     // transpose should work outside s() as well
     const Eigen::Vector3f v = s(f_temp);
@@ -57,7 +51,6 @@ void ParallelizedPolicy::init(const std::vector<Eigen::Vector3f>& x_obs,
                                                     A_temp.size());
 
     // set A
-    A.col(i) = A_temp_v;
     A_sum += A_temp;
     Af_sum += (A_temp * f_temp);
   }

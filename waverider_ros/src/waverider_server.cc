@@ -5,12 +5,42 @@
 #include <omav_msgs/eigen_omav_msgs.h>
 #include <rmpcpp/geometry/partial_geometry.h>
 #include <visualization_msgs/MarkerArray.h>
+#include <wavemap/config/param.h>
+#include <wavemap_ros_conversions/config_conversions.h>
 
 #include "waverider_ros/policy_visuals.h"
 
 namespace waverider {
+DECLARE_CONFIG_MEMBERS(WaveriderServerConfig,
+                      (world_frame)
+                      (publish_debug_visuals_every_n_iterations)
+                      (get_state_from_tf_frame));
+
+bool WaveriderServerConfig::isValid(bool verbose) const {
+  bool all_valid = true;
+
+  all_valid &= IS_PARAM_NE(world_frame, std::string(""), verbose);
+
+  return all_valid;
+}
+
+WaveriderServer::WaveriderServer(ros::NodeHandle nh, ros::NodeHandle nh_private)
+    : WaveriderServer(
+          nh, nh_private,
+          WaveriderServerConfig::from(
+              wavemap::param::convert::toParamMap(nh_private, ""))) {}
+
+WaveriderServer::WaveriderServer(ros::NodeHandle nh, ros::NodeHandle nh_private,
+                                 const WaveriderServerConfig& config)
+    : config_(config.checkValid()) {
+  subscribeToTopics(nh);
+  subscribeToTimers(nh);
+  advertiseTopics(nh_private);
+}
+
 void WaveriderServer::updateMap(
     const wavemap::VolumetricDataStructureBase& map) {
+  std::scoped_lock lock(mutex_);
   if (!world_state_.has_value()) {
     ROS_WARN("World state not yet initialized.");
     return;
@@ -35,39 +65,44 @@ void WaveriderServer::startPlanningAsync() {
 
   continue_async_planning_ = true;
   async_planning_thread_ = std::thread(
-      [&waverider_policy = waverider_policy_, &world_state = world_state_,
-       &policy_pub = policy_pub_, &debug_pub = debug_pub_,
-       &should_continue = continue_async_planning_]() {
+      [&world_state = world_state_, &waverider_policy = waverider_policy_,
+       &mutex = mutex_, &policy_pub = policy_pub_, &debug_pub = debug_pub_,
+       &config = config_, &should_continue = continue_async_planning_]() {
         ros::Rate rate(200.0);
         while (ros::ok() && should_continue) {
-          if (waverider_policy.isReady() && world_state.has_value()) {
-            // Compute the policy
-            const auto val_wavemap_r3_W =
-                waverider_policy.evaluateAt(world_state->r3());
-            rmpcpp::R3toSE3 geometry;
-            const rmpcpp::PolicyValue<7> val_wavemap_W =
-                geometry.at(world_state->r3()).pull(val_wavemap_r3_W);
+          {
+            std::scoped_lock lock(mutex);
+            if (waverider_policy.isReady() && world_state.has_value()) {
+              // Compute the policy
+              const auto val_wavemap_r3_W =
+                  waverider_policy.evaluateAt(world_state->r3());
+              rmpcpp::R3toSE3 geometry;
+              const rmpcpp::PolicyValue<7> val_wavemap_W =
+                  geometry.at(world_state->r3()).pull(val_wavemap_r3_W);
 
-            // Publish the policy
-            mav_reactive_planning::PolicyValue policy_msg;
-            policy_msg.Name = "waverider";
-            policy_msg.f = std::vector<double>(
-                val_wavemap_W.f_.data(),
-                val_wavemap_W.f_.data() + val_wavemap_W.f_.size());
-            policy_msg.A = std::vector<double>(
-                val_wavemap_W.A_.data(),
-                val_wavemap_W.A_.data() + val_wavemap_W.A_.size());
-            policy_pub.publish(policy_msg);
+              // Publish the policy
+              mav_reactive_planning::PolicyValue policy_msg;
+              policy_msg.Name = "waverider";
+              policy_msg.f = std::vector<double>(
+                  val_wavemap_W.f_.data(),
+                  val_wavemap_W.f_.data() + val_wavemap_W.f_.size());
+              policy_msg.A = std::vector<double>(
+                  val_wavemap_W.A_.data(),
+                  val_wavemap_W.A_.data() + val_wavemap_W.A_.size());
+              policy_pub.publish(policy_msg);
 
-            // Publish debug visuals
-            static int i = 0;
-            if (++i % 20) {
-              visualization_msgs::MarkerArray marker_array =
-                  filteredObstaclesToMarkerArray(
-                      waverider_policy.getObstacleCells());
-              marker_array.markers.emplace_back(
-                  robotPositionToMarker(world_state->p().cast<float>()));
-              debug_pub.publish(marker_array);
+              // Publish debug visuals
+              static int i = 0;
+              if (++i % config.publish_debug_visuals_every_n_iterations == 0) {
+                visualization_msgs::MarkerArray marker_array;
+                // marker_array.markers.emplace_back(generateClearingMarker());
+                addFilteredObstaclesToMarkerArray(
+                    waverider_policy.getObstacleCells(), config.world_frame,
+                    marker_array);
+                marker_array.markers.emplace_back(robotPositionToMarker(
+                    world_state->p().cast<float>(), config.world_frame));
+                debug_pub.publish(marker_array);
+              }
             }
           }
           rate.sleep();
@@ -78,23 +113,24 @@ void WaveriderServer::startPlanningAsync() {
 
 void WaveriderServer::currentReferenceCallback(
     const trajectory_msgs::MultiDOFJointTrajectory& trajectory_msg) {
-  const auto latest = trajectory_msg.points.at(0);
-  omav_msgs::EigenTrajectoryPoint latest_eigen =
-      omav_msgs::eigenTrajectoryPointFromMsg(latest);
+  const auto current_setpoint = trajectory_msg.points.front();
+  const omav_msgs::EigenTrajectoryPoint current_setpoint_eigen =
+      omav_msgs::eigenTrajectoryPointFromMsg(current_setpoint);
 
   // Setpoint transform from body to global
   Eigen::Affine3d T_odom_body_ref = Eigen::Affine3d::Identity();
-  T_odom_body_ref.translation() = latest_eigen.getPosition_W();
+  T_odom_body_ref.translation() = current_setpoint_eigen.getPosition_W();
   T_odom_body_ref.linear() =
-      latest_eigen.getOrientation_W_B().toRotationMatrix();
+      current_setpoint_eigen.getOrientation_W_B().toRotationMatrix();
   // Velocity and acceleration in odom
-  Eigen::Vector3d v = latest_eigen.getVelocity_B();
-  Eigen::Vector3d vdot = latest_eigen.getAcceleration_B();
+  Eigen::Vector3d v = current_setpoint_eigen.getVelocity_B();
+  Eigen::Vector3d vdot = current_setpoint_eigen.getAcceleration_B();
   // Body angular velocity and acceleration
-  Eigen::Vector3d w = latest_eigen.getAngularVelocity_B();
-  Eigen::Vector3d wdot = latest_eigen.getAngularAcceleration_B();
+  Eigen::Vector3d w = current_setpoint_eigen.getAngularVelocity_B();
+  Eigen::Vector3d wdot = current_setpoint_eigen.getAngularAcceleration_B();
 
   // Convert into world state
+  std::scoped_lock lock(mutex_);
   world_state_.emplace();
   world_state_->p() = T_odom_body_ref.translation();
   world_state_->q() = T_odom_body_ref.rotation();
@@ -104,9 +140,51 @@ void WaveriderServer::currentReferenceCallback(
   world_state_->dw() = T_odom_body_ref.rotation() * wdot;
 }
 
+void WaveriderServer::estimateStateFromTf() {
+  ros::Time time_current = ros::Time::now();
+  ros::Time time_previous_step = time_current - ros::Duration(0.01);
+  if (!transformer_.waitForTransform(
+          config_.world_frame, config_.get_state_from_tf_frame, time_current)) {
+    return;
+  }
+
+  wavemap::Transformation3D T_W_R_current;
+  wavemap::Transformation3D T_W_R_previous_step;
+  if (transformer_.lookupTransform(config_.world_frame,
+                                   config_.get_state_from_tf_frame,
+                                   time_current, T_W_R_current) &&
+      transformer_.lookupTransform(config_.world_frame,
+                                   config_.get_state_from_tf_frame,
+                                   time_previous_step, T_W_R_previous_step)) {
+    std::scoped_lock lock(mutex_);
+    world_state_.emplace();
+    world_state_->p() = T_W_R_current.getPosition().cast<double>();
+    world_state_->q() =
+        T_W_R_current.getRotation().getRotationMatrix().cast<double>();
+    world_state_->v().setZero();
+    world_state_->a().setZero();
+    world_state_->w().setZero();
+    world_state_->dw().setZero();
+  } else {
+    ROS_WARN_STREAM_THROTTLE(
+        1, "Could not estimate state from TFs. Poses of frame '"
+               << config_.get_state_from_tf_frame << "' in '"
+               << config_.world_frame << "' at times " << time_previous_step
+               << " and " << time_current << " are not available.");
+  }
+}
+
 void WaveriderServer::subscribeToTopics(ros::NodeHandle& nh) {
   current_reference_sub_ = nh.subscribe(
       "current_reference", 1, &WaveriderServer::currentReferenceCallback, this);
+}
+
+void WaveriderServer::subscribeToTimers(const ros::NodeHandle& nh) {
+  if (!config_.get_state_from_tf_frame.empty()) {
+    state_from_tf_timer_ =
+        nh.createTimer(ros::Duration(0.02),
+                       [this](const auto /*event*/) { estimateStateFromTf(); });
+  }
 }
 
 void WaveriderServer::advertiseTopics(ros::NodeHandle& nh_private) {

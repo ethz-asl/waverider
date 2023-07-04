@@ -18,7 +18,7 @@ class WaveriderPolicy : public rmpcpp::PolicyBase<rmpcpp::Space<3>> {
   void setRunAllLevels(bool run_all_levels) {
     run_all_levels_ = run_all_levels;
   }
-  const ObstacleCells& getObstacleCells() {
+  const ObstacleCells& getObstacleCells() const {
     return obstacle_filter_.getObstacleCells();
   }
 

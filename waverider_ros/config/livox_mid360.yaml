@@ -8,24 +8,23 @@ mapper:
     data_structure:
       type: "hashed_wavelet_octree"
       min_cell_width: { meters: 0.1 }
-      tree_height: 6
 
   inputs:
     - type: "pointcloud"
       general:
         topic_name: "/livox/lidar"
         topic_type: "livox"
-        topic_queue_length: 1
-        max_wait_for_pose: { seconds: 1.0 }
-        reprojected_pointcloud_topic_name: "lidar_input"
+        undistort_motion: true
+        topic_queue_length: 3
+        max_wait_for_pose: { seconds: 0.3 }
+        # reprojected_pointcloud_topic_name: "lidar_input"
         # projected_range_image_topic_name: "/wavemap/lidar_range_image"
       integrators:
         - integration_method:
             type: "hashed_wavelet_integrator"
-            min_range: { meters: 0.5 }
-            max_range: { meters: 15.0 }
+            min_range: { meters: 1.0 }
+            max_range: { meters: 10.0 }
             termination_update_error: 0.1
-            termination_height: 0
           projection_model:
             type: "spherical_projector"
             elevation:
@@ -38,9 +37,14 @@ mapper:
               max_angle: { degrees: 180.0 }
           measurement_model:
             type: "continuous_beam"
-            angle_sigma: { degrees: 0.035 }
+            angle_sigma: { degrees: 0.05 }
             # NOTE: For best results, we recommend setting range_sigma to
             #       max(min_cell_width / 2, ouster_noise) where ouster_noise = 0.05
-            range_sigma: { meters: 0.05 }
+            range_sigma: { meters: 0.08 }
             scaling_free: 0.2
             scaling_occupied: 0.4
+
+planner:
+  world_frame: "odom"
+  publish_debug_visuals_every_n_iterations: 10
+  get_state_from_tf_frame: "body"  # Leave blank to disable

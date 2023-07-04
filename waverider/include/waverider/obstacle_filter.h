@@ -24,10 +24,10 @@ class WavemapObstacleFilter {
               const wavemap::Point3D& robot_position);
 
   bool isReady() const { return !obstacle_cells_.centers.empty(); }
-  const ObstacleCells& getObstacleCells() { return obstacle_cells_; }
+  const ObstacleCells& getObstacleCells() const { return obstacle_cells_; }
 
  private:
-  wavemap::FloatingPoint occupancy_threshold_ = -0.6f;
+  wavemap::FloatingPoint occupancy_threshold_ = 0.001f;
   ObstacleCells obstacle_cells_;
   // function that defines the radius we care about for each tree level
   std::function<double(uint)> f_lvl_cutoff_;

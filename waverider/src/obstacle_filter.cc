@@ -10,6 +10,7 @@ void WavemapObstacleFilter::update(const wavemap::HashedWaveletOctree& map,
   obstacle_cells_.centers.resize(map.getTreeHeight() + 1);
   obstacle_cells_.cell_widths.resize(map.getTreeHeight() + 1);
   for (int i = 0; i <= map.getTreeHeight(); ++i) {
+    obstacle_cells_.centers[i].clear();
     obstacle_cells_.cell_widths[i] =
         wavemap::convert::heightToCellWidth(map.getMinCellWidth(), i);
   }
@@ -100,7 +101,7 @@ bool WavemapObstacleFilter::recursiveObstacleFilter(  // NOLINT
 
         if (within_boundaries_child) {
           // add policy!
-          obstacle_cells_.centers[child_node_index.height].push_back(
+          obstacle_cells_.centers[child_node_index.height].emplace_back(
               center_point_child);
           any_of_kids_added = true;
         }
@@ -120,7 +121,7 @@ bool WavemapObstacleFilter::recursiveObstacleFilter(  // NOLINT
 
     if (within_boundaries) {
       // add policy!
-      obstacle_cells_.centers[node_index.height].push_back(center_point);
+      obstacle_cells_.centers[node_index.height].emplace_back(center_point);
       return true;
     }
   }

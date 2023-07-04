@@ -28,8 +28,8 @@ rmpcpp::PolicyValue<3> WaveriderPolicy::evaluateAt(const rmpcpp::State<3>& x) {
 
   rmpcpp::PolicyValue<3> scaled_avoidance = {avoidance_policy.f_,
                                              avoidance_policy.A_};
-  std::cout << scaled_avoidance.f_.transpose() << std::endl;
-  std::cout << scaled_avoidance.A_ << std::endl;
+  //  std::cout << scaled_avoidance.f_.transpose() << std::endl;
+  //  std::cout << scaled_avoidance.A_ << std::endl;
   return scaled_avoidance;
 }
 }  // namespace waverider

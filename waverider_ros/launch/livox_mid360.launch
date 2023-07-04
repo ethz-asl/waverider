@@ -51,7 +51,7 @@
   <!-- Run waverider -->
   <node name="waverider_server" pkg="waverider_ros"
         type="waverider_server_node"
-        output="screen">
+        output="screen" launch-prefix="">
     <rosparam file="$(arg param_file)"/>
   </node>
 
