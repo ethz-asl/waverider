@@ -71,15 +71,12 @@ void WaveriderServer::startPlanningAsync() {
         ros::Rate rate(200.0);
         while (ros::ok() && should_continue) {
           {
-            auto ros_time_policy = ros::Time::now();
-            std::string policy_name = std::to_string(ros::Time::now().toSec());
-            std::cout << "EVAL\t" << ros_time_policy.toSec() << "\tCREATED\t"<<policy_name <<std::endl;
-
             std::scoped_lock lock(mutex);
             if (waverider_policy.isReady() && world_state.has_value()) {
-              std::cout << "EVAL\t" << ros::Time::now().toSec()
-                        << "\tStarted recomputing obstacle avoidance policy"
-                        << std::endl;
+              std::string policy_name =
+                  std::to_string(ros::Time::now().toSec());
+              std::cout << "EVAL\t" << ros::Time::now().toSec() << "\tCREATED\t"
+                        << policy_name << std::endl;
 
               // Compute the policy
               const auto val_wavemap_r3_W =
@@ -94,13 +91,10 @@ void WaveriderServer::startPlanningAsync() {
               policy_msg.A = std::vector<double>(
                   val_wavemap_r3_W.A_.data(),
                   val_wavemap_r3_W.A_.data() + val_wavemap_r3_W.A_.size());
-              std::cout << "EVAL\t" << ros_time_policy.toSec() << "\tPUBLISHED\t"<<policy_name<<std::endl;
+              std::cout << "EVAL\t" << ros::Time::now().toSec()
+                        << "\tPUBLISHING\t" << policy_name << std::endl;
 
               policy_pub.publish(policy_msg);
-
-              std::cout << "EVAL\t" << ros::Time::now().toSec()
-                        << "\tFinished recomputing obstacle avoidance policy"
-                        << std::endl;
 
               // Publish debug visuals
               static int i = 0;

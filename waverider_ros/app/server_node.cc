@@ -45,10 +45,10 @@ int main(int argc, char** argv) {
   wavemap_server->setMapUpdatedCallback(
       [&waverider_server](const wavemap::VolumetricDataStructureBase& map) {
         std::cout << "EVAL\t" << ros::Time::now().toSec()
-                  << "\tStarted updating obstacle cells" << std::endl;
+                  << "\tSTARTED obstacle cells update" << std::endl;
         waverider_server->updateMap(map);
         std::cout << "EVAL\t" << ros::Time::now().toSec()
-                  << "\tFinished updating obstacle cells" << std::endl;
+                  << "\tFINISHED obstacle cells update" << std::endl;
       });
 
   // Start processing inputs
