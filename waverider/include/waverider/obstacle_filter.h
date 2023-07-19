@@ -26,6 +26,8 @@ class WavemapObstacleFilter {
   bool isReady() const { return !obstacle_cells_.centers.empty(); }
   const ObstacleCells& getObstacleCells() const { return obstacle_cells_; }
 
+  bool use_only_lowest_level_ = false;
+
  private:
   wavemap::FloatingPoint occupancy_threshold_ = 0.001f;
   ObstacleCells obstacle_cells_;

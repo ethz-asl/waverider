@@ -11,6 +11,8 @@
 #include <wavemap_ros/tf_transformer.h>
 #include <waverider/waverider_policy.h>
 
+#include <std_srvs/Empty.h>
+
 namespace waverider {
 struct WaveriderServerConfig : wavemap::ConfigBase<WaveriderServerConfig, 3> {
   std::string world_frame = "odom";
@@ -39,6 +41,9 @@ class WaveriderServer {
       const trajectory_msgs::MultiDOFJointTrajectory& trajectory_msg);
   void estimateStateFromTf();
 
+  bool toggleServiceCallback(std_srvs::Empty::Request  &req,
+                                              std_srvs::Empty::Response &re);
+
  private:
   const WaveriderServerConfig config_;
 
@@ -62,6 +67,12 @@ class WaveriderServer {
   void advertiseTopics(ros::NodeHandle& nh_private);
   ros::Publisher policy_pub_;
   ros::Publisher debug_pub_;
+
+
+  ros::ServiceServer srv_level_toggle_;
+  bool only_highest_level_ = false;
+
+
 };
 }  // namespace waverider
 

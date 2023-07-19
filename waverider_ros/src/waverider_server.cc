@@ -36,6 +36,8 @@ WaveriderServer::WaveriderServer(ros::NodeHandle nh, ros::NodeHandle nh_private,
   subscribeToTopics(nh);
   subscribeToTimers(nh);
   advertiseTopics(nh_private);
+
+  srv_level_toggle_ = nh.advertiseService("toggle_levels", &WaveriderServer::toggleServiceCallback, this);
 }
 
 void WaveriderServer::updateMap(
@@ -177,6 +179,11 @@ void WaveriderServer::estimateStateFromTf() {
                << config_.world_frame << "' at times " << time_previous_step
                << " and " << time_current << " are not available.");
   }
+}
+
+bool WaveriderServer::toggleServiceCallback(std_srvs::Empty::Request  &req,
+                                            std_srvs::Empty::Response &re){
+  only_highest_level_ = !only_highest_level_;
 }
 
 void WaveriderServer::subscribeToTopics(ros::NodeHandle& nh) {

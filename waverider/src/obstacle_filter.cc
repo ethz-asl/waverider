@@ -4,12 +4,12 @@ namespace waverider {
 void WavemapObstacleFilter::update(const wavemap::HashedWaveletOctree& map,
                                    const wavemap::Point3D& robot_position) {
 
-  bool all_at_highest_level = true;
+
 
   // this is the maximum distance we care about
   f_lvl_cutoff_ = [](uint level) { return (level + 1.5); };
   const double max_cutoff = f_lvl_cutoff_(6);
-  if(all_at_highest_level) {
+  if(use_only_lowest_level_) {
     // replacing a lambda.. bad style.
     f_lvl_cutoff_ =  [&](uint level) { return max_cutoff; };
 
@@ -128,7 +128,7 @@ bool WavemapObstacleFilter::recursiveObstacleFilter(  // NOLINT
   // occupied if so, add those
 
   // if not, check if itself is within scope and add if in scope
-  if (!any_of_kids_added && node_scale_coefficient > occupancy_threshold_) {
+  if (!use_only_lowest_level_ && !any_of_kids_added && node_scale_coefficient > occupancy_threshold_) {
     // check within scope
     const bool within_boundaries =
         (center_point - robot_position).norm() <
