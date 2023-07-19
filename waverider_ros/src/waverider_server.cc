@@ -71,6 +71,10 @@ void WaveriderServer::startPlanningAsync() {
         ros::Rate rate(200.0);
         while (ros::ok() && should_continue) {
           {
+            auto ros_time_policy = ros::Time::now();
+            std::string policy_name = std::to_string(ros::Time::now().toSec());
+            std::cout << "EVAL\t" << ros_time_policy.toSec() << "\tCREATED\t"<<policy_name <<std::endl;
+
             std::scoped_lock lock(mutex);
             if (waverider_policy.isReady() && world_state.has_value()) {
               std::cout << "EVAL\t" << ros::Time::now().toSec()
@@ -80,19 +84,18 @@ void WaveriderServer::startPlanningAsync() {
               // Compute the policy
               const auto val_wavemap_r3_W =
                   waverider_policy.evaluateAt(world_state->r3());
-              rmpcpp::R3toSE3 geometry;
-              const rmpcpp::PolicyValue<7> val_wavemap_W =
-                  geometry.at(world_state->r3()).pull(val_wavemap_r3_W);
 
               // Publish the policy
               mav_reactive_planning::PolicyValue policy_msg;
-              policy_msg.Name = "waverider";
+              policy_msg.Name = policy_name;
               policy_msg.f = std::vector<double>(
-                  val_wavemap_W.f_.data(),
-                  val_wavemap_W.f_.data() + val_wavemap_W.f_.size());
+                  val_wavemap_r3_W.f_.data(),
+                  val_wavemap_r3_W.f_.data() + val_wavemap_r3_W.f_.size());
               policy_msg.A = std::vector<double>(
-                  val_wavemap_W.A_.data(),
-                  val_wavemap_W.A_.data() + val_wavemap_W.A_.size());
+                  val_wavemap_r3_W.A_.data(),
+                  val_wavemap_r3_W.A_.data() + val_wavemap_r3_W.A_.size());
+              std::cout << "EVAL\t" << ros_time_policy.toSec() << "\tPUBLISHED\t"<<policy_name<<std::endl;
+
               policy_pub.publish(policy_msg);
 
               std::cout << "EVAL\t" << ros::Time::now().toSec()

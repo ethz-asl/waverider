@@ -4,7 +4,7 @@ namespace waverider {
 void WavemapObstacleFilter::update(const wavemap::HashedWaveletOctree& map,
                                    const wavemap::Point3D& robot_position) {
   // this is the maximum distance we care about
-  f_lvl_cutoff_ = [](uint level) { return (level + 1); };
+  f_lvl_cutoff_ = [](uint level) { return (level + 1.5); };
   const double max_cutoff = f_lvl_cutoff_(6);
   // init debug structure
   obstacle_cells_.centers.resize(map.getTreeHeight() + 1);
