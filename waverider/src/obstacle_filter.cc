@@ -1,11 +1,19 @@
 #include "waverider/obstacle_filter.h"
-
+#include<iostream>
 namespace waverider {
 void WavemapObstacleFilter::update(const wavemap::HashedWaveletOctree& map,
                                    const wavemap::Point3D& robot_position) {
+
+  bool all_at_highest_level = true;
+
   // this is the maximum distance we care about
   f_lvl_cutoff_ = [](uint level) { return (level + 1.5); };
   const double max_cutoff = f_lvl_cutoff_(6);
+  if(all_at_highest_level) {
+    // replacing a lambda.. bad style.
+    f_lvl_cutoff_ =  [&](uint level) { return max_cutoff; };
+
+  }
   // init debug structure
   obstacle_cells_.centers.resize(map.getTreeHeight() + 1);
   obstacle_cells_.cell_widths.resize(map.getTreeHeight() + 1);
@@ -39,6 +47,13 @@ void WavemapObstacleFilter::update(const wavemap::HashedWaveletOctree& map,
         wavemap::OctreeIndex{map.getTreeHeight(), block_idx},
         block.getRootNode(), block.getRootScale());
   }
+  int all_policies = 0;
+  for (int i = 0; i <= map.getTreeHeight(); ++i) {
+    std::cout << "EVAL\t" <<  "LEVEL"<< i<< "\t" <<obstacle_cells_.centers[i].size()<< std::endl;
+    all_policies += obstacle_cells_.centers[i].size();
+  }
+  std::cout << "EVAL\t" <<  "TOTAL\t" <<all_policies<< std::endl;
+
 }
 
 bool WavemapObstacleFilter::recursiveObstacleFilter(  // NOLINT
