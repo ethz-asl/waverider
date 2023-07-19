@@ -1,0 +1,29 @@
+<launch>
+  <!-- Wavemap params -->
+  <arg name="param_file"
+       default="$(find waverider_ros)/config/wavestork.yaml"
+       doc="Name of the file from which to read wavemap's server params."/>
+  <arg name="show_rviz" value="false" />
+ <!-- Link TF frames -->
+ <node pkg="tf2_ros"
+        type="static_transform_publisher"
+        name="link_body_livox_frame"
+        args="-0.0110 -0.02329 0.04412 0.0 0.0 0.0 1.000
+            imu_forward_prop livox_frame"/>
+
+ <node pkg="tf2_ros"
+        type="static_transform_publisher"
+        name="link_fastlio_msf_frame"
+        args="0.0 0.0 0.0 1.0 0.0 0.0 0.0
+            odom camera_init"/>
+ 
+  <!-- Run waverider -->
+  <node name="waverider_server" pkg="waverider_ros"
+        type="waverider_server_node"
+        output="screen" launch-prefix="">
+    <rosparam file="$(arg param_file)"/>
+    <remap from="/current_reference" to="/stork/command/current_reference" />
+  </node>
+
+
+</launch>

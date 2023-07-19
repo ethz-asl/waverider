@@ -75,7 +75,7 @@ void WaveriderServer::startPlanningAsync() {
             if (waverider_policy.isReady() && world_state.has_value()) {
               std::string policy_name =
                   std::to_string(ros::Time::now().toSec());
-              std::cout << "EVAL\t" << ros::Time::now().toSec() << "\tCREATED\t"
+              std::cout << "EVAL\t" << ros::Time::now() << "\tCREATED\t"
                         << policy_name << std::endl;
 
               // Compute the policy
@@ -91,7 +91,7 @@ void WaveriderServer::startPlanningAsync() {
               policy_msg.A = std::vector<double>(
                   val_wavemap_r3_W.A_.data(),
                   val_wavemap_r3_W.A_.data() + val_wavemap_r3_W.A_.size());
-              std::cout << "EVAL\t" << ros::Time::now().toSec()
+              std::cout << "EVAL\t" << ros::Time::now()
                         << "\tPUBLISHING\t" << policy_name << std::endl;
 
               policy_pub.publish(policy_msg);
