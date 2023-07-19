@@ -73,6 +73,10 @@ void WaveriderServer::startPlanningAsync() {
           {
             std::scoped_lock lock(mutex);
             if (waverider_policy.isReady() && world_state.has_value()) {
+              std::cout << "EVAL\t" << ros::Time::now().toSec()
+                        << "\tStarted recomputing obstacle avoidance policy"
+                        << std::endl;
+
               // Compute the policy
               const auto val_wavemap_r3_W =
                   waverider_policy.evaluateAt(world_state->r3());
@@ -90,6 +94,10 @@ void WaveriderServer::startPlanningAsync() {
                   val_wavemap_W.A_.data(),
                   val_wavemap_W.A_.data() + val_wavemap_W.A_.size());
               policy_pub.publish(policy_msg);
+
+              std::cout << "EVAL\t" << ros::Time::now().toSec()
+                        << "\tFinished recomputing obstacle avoidance policy"
+                        << std::endl;
 
               // Publish debug visuals
               static int i = 0;
