@@ -70,7 +70,7 @@ class WaveriderServer {
 
 
   ros::ServiceServer srv_level_toggle_;
-  bool only_highest_level_ = false;
+
 
 
 };
