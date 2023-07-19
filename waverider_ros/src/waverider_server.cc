@@ -184,7 +184,7 @@ void WaveriderServer::estimateStateFromTf() {
 bool WaveriderServer::toggleServiceCallback(std_srvs::Empty::Request  &req,
                                             std_srvs::Empty::Response &re){
 
-  waverider_policy_.obstacle_filter_.use_only_lowest_level_ != waverider_policy_.obstacle_filter_.use_only_lowest_level_;
+  waverider_policy_.obstacle_filter_.use_only_lowest_level_ = !waverider_policy_.obstacle_filter_.use_only_lowest_level_;
   std::cout << "EVAL\t" << ros::Time::now() << "\tLEVELS TOGGLED" << std::endl;
   return true;
 }
