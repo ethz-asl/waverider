@@ -7,13 +7,16 @@ void WavemapObstacleFilter::update(const wavemap::HashedWaveletOctree& map,
 
 
   // this is the maximum distance we care about
-  f_lvl_cutoff_ = [](uint level) { return exp((level+1.0)/2.0); };
-  const double max_cutoff = f_lvl_cutoff_(6);
+  f_lvl_cutoff_ = [](uint level) -> double { return std::exp((level+1.0)/2.0); };
+  //f_lvl_cutoff_ = [](uint level) { return level+1.5; };
   if(use_only_lowest_level_) {
     // replacing a lambda.. bad style.
-    f_lvl_cutoff_ =  [&](uint level) { return max_cutoff; };
+    // its worse than i thought
+    f_lvl_cutoff_ =  [](uint level) -> double { return std::exp((6+1.0)/2.0); };
 
   }
+
+  const double max_cutoff = f_lvl_cutoff_(6);
   // init debug structure
   obstacle_cells_.centers.resize(map.getTreeHeight() + 1);
   obstacle_cells_.cell_widths.resize(map.getTreeHeight() + 1);
@@ -23,6 +26,7 @@ void WavemapObstacleFilter::update(const wavemap::HashedWaveletOctree& map,
         wavemap::convert::heightToCellWidth(map.getMinCellWidth(), i);
   }
 
+  function_evals = 0;
   // for now, we do these naively by doing a full check each time
   // in the future, we could cache the AABB tree's for all blocks
   // and simply check if there is any new block to worry about
@@ -53,6 +57,7 @@ void WavemapObstacleFilter::update(const wavemap::HashedWaveletOctree& map,
     all_policies += obstacle_cells_.centers[i].size();
   }
   std::cout << "EVAL\t" <<  "TOTAL\t" <<all_policies<< std::endl;
+  std::cout << "EVAL\t" << "FUNC\t" << function_evals << std::endl;
 
 }
 
@@ -62,6 +67,7 @@ bool WavemapObstacleFilter::recursiveObstacleFilter(  // NOLINT
     const wavemap::OctreeIndex& node_index,
     const wavemap::HashedWaveletOctreeBlock::NodeType& node,
     const wavemap::FloatingPoint node_scale_coefficient) {
+    ++function_evals;
   if (node_scale_coefficient < map.getMinLogOdds() + 1e-4f) {
     return false;
   }

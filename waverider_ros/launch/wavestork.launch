@@ -22,7 +22,7 @@
         type="waverider_server_node"
         output="screen" launch-prefix="">
     <rosparam file="$(arg param_file)"/>
-    <remap from="/current_reference" to="/stork/command/current_reference" />
+<!--    <remap from="/current_reference" to="/stork/command/current_reference" /> -->
   </node>
 
 
