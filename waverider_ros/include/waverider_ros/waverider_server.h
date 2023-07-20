@@ -51,10 +51,14 @@ class WaveriderServer {
   std::optional<rmpcpp::SE3State> world_state_;
   WaveriderPolicy waverider_policy_;
   std::mutex mutex_;  // Use for both world_state_ and waverider_policy_
+  std::atomic<bool> mapper_waiting_;
+  std::condition_variable mapper_waiting_cv_;
 
   // Asynchronous plan policy publishing logic
   std::atomic<bool> continue_async_planning_ = false;
   std::thread async_planning_thread_;
+  void asyncPlanningLoop();
+  void evaluateAndPublishPolicy();
 
   // ROS interfaces
   void subscribeToTopics(ros::NodeHandle& nh);

@@ -4,6 +4,7 @@
 #include <omav_msgs/conversions.h>
 #include <omav_msgs/eigen_omav_msgs.h>
 #include <rmpcpp/geometry/partial_geometry.h>
+#include <tracy/Tracy.hpp>
 #include <visualization_msgs/MarkerArray.h>
 #include <wavemap/config/param.h>
 #include <wavemap_ros_conversions/config_conversions.h>
@@ -37,12 +38,17 @@ WaveriderServer::WaveriderServer(ros::NodeHandle nh, ros::NodeHandle nh_private,
   subscribeToTimers(nh);
   advertiseTopics(nh_private);
 
-  srv_level_toggle_ = nh.advertiseService("toggle_levels", &WaveriderServer::toggleServiceCallback, this);
+  srv_level_toggle_ = nh.advertiseService(
+      "toggle_levels", &WaveriderServer::toggleServiceCallback, this);
 }
 
 void WaveriderServer::updateMap(
     const wavemap::VolumetricDataStructureBase& map) {
+  ZoneScoped;
+
+  mapper_waiting_ = true;
   std::scoped_lock lock(mutex_);
+
   if (!world_state_.has_value()) {
     ROS_WARN("World state not yet initialized.");
     return;
@@ -58,68 +64,25 @@ void WaveriderServer::updateMap(
         "Waverider policies can currently only be extracted from maps of "
         "type wavemap::HashedWaveletOctree.");
   }
+
+  mapper_waiting_ = false;
+  mapper_waiting_cv_.notify_all();
 }
 void WaveriderServer::startPlanningAsync() {
+  ZoneScoped;
   if (continue_async_planning_) {
     ROS_INFO("Async planning already enabled.");
     return;
   }
 
   continue_async_planning_ = true;
-  async_planning_thread_ = std::thread(
-      [&world_state = world_state_, &waverider_policy = waverider_policy_,
-       &mutex = mutex_, &policy_pub = policy_pub_, &debug_pub = debug_pub_,
-       &config = config_, &should_continue = continue_async_planning_]() {
-        ros::Rate rate(200.0);
-        while (ros::ok() && should_continue) {
-          {
-            std::scoped_lock lock(mutex);
-            if (waverider_policy.isReady() && world_state.has_value()) {
-              std::string policy_name =
-                  std::to_string(ros::Time::now().toSec());
-              std::cout << "EVAL\t" << ros::Time::now() << "\tCREATED\t"
-                        << policy_name << std::endl;
-
-              // Compute the policy
-              const auto val_wavemap_r3_W =
-                  waverider_policy.evaluateAt(world_state->r3());
-
-              // Publish the policy
-              mav_reactive_planning::PolicyValue policy_msg;
-              policy_msg.Name = policy_name;
-              policy_msg.f = std::vector<double>(
-                  val_wavemap_r3_W.f_.data(),
-                  val_wavemap_r3_W.f_.data() + val_wavemap_r3_W.f_.size());
-              policy_msg.A = std::vector<double>(
-                  val_wavemap_r3_W.A_.data(),
-                  val_wavemap_r3_W.A_.data() + val_wavemap_r3_W.A_.size());
-              std::cout << "EVAL\t" << ros::Time::now()
-                        << "\tPUBLISHING\t" << policy_name << std::endl;
-
-              policy_pub.publish(policy_msg);
-
-              // Publish debug visuals
-              static int i = 0;
-              if (++i % config.publish_debug_visuals_every_n_iterations == 0) {
-                visualization_msgs::MarkerArray marker_array;
-                // marker_array.markers.emplace_back(generateClearingMarker());
-                addFilteredObstaclesToMarkerArray(
-                    waverider_policy.getObstacleCells(), config.world_frame,
-                    marker_array);
-                marker_array.markers.emplace_back(robotPositionToMarker(
-                    world_state->p().cast<float>(), config.world_frame));
-                debug_pub.publish(marker_array);
-              }
-            }
-          }
-          rate.sleep();
-        }
-        ROS_INFO("Stopped async planning.");
-      });
+  async_planning_thread_ =
+      std::thread(&WaveriderServer::asyncPlanningLoop, this);
 }
 
 void WaveriderServer::currentReferenceCallback(
     const trajectory_msgs::MultiDOFJointTrajectory& trajectory_msg) {
+  ZoneScoped;
   const auto current_setpoint = trajectory_msg.points.front();
   const omav_msgs::EigenTrajectoryPoint current_setpoint_eigen =
       omav_msgs::eigenTrajectoryPointFromMsg(current_setpoint);
@@ -148,21 +111,10 @@ void WaveriderServer::currentReferenceCallback(
 }
 
 void WaveriderServer::estimateStateFromTf() {
-  ros::Time time_current = ros::Time::now();
-  ros::Time time_previous_step = time_current - ros::Duration(0.01);
-  if (!transformer_.waitForTransform(
-          config_.world_frame, config_.get_state_from_tf_frame, time_current)) {
-    return;
-  }
-
   wavemap::Transformation3D T_W_R_current;
-  wavemap::Transformation3D T_W_R_previous_step;
-  if (transformer_.lookupTransform(config_.world_frame,
-                                   config_.get_state_from_tf_frame,
-                                   time_current, T_W_R_current) &&
-      transformer_.lookupTransform(config_.world_frame,
-                                   config_.get_state_from_tf_frame,
-                                   time_previous_step, T_W_R_previous_step)) {
+  if (transformer_.lookupLatestTransform(config_.world_frame,
+                                         config_.get_state_from_tf_frame,
+                                         T_W_R_current)) {
     std::scoped_lock lock(mutex_);
     world_state_.emplace();
     world_state_->p() = T_W_R_current.getPosition().cast<double>();
@@ -176,17 +128,72 @@ void WaveriderServer::estimateStateFromTf() {
     ROS_WARN_STREAM_THROTTLE(
         1, "Could not estimate state from TFs. Poses of frame '"
                << config_.get_state_from_tf_frame << "' in '"
-               << config_.world_frame << "' at times " << time_previous_step
-               << " and " << time_current << " are not available.");
+               << config_.world_frame << "' at current time is not available.");
   }
 }
 
-bool WaveriderServer::toggleServiceCallback(std_srvs::Empty::Request  &req,
-                                            std_srvs::Empty::Response &re){
-
-  waverider_policy_.obstacle_filter_.use_only_lowest_level_ = !waverider_policy_.obstacle_filter_.use_only_lowest_level_;
+bool WaveriderServer::toggleServiceCallback(std_srvs::Empty::Request& req,
+                                            std_srvs::Empty::Response& re) {
+  waverider_policy_.obstacle_filter_.use_only_lowest_level_ =
+      !waverider_policy_.obstacle_filter_.use_only_lowest_level_;
   std::cout << "EVAL\t" << ros::Time::now() << "\tLEVELS TOGGLED" << std::endl;
   return true;
+}
+
+void WaveriderServer::asyncPlanningLoop() {
+  ZoneScoped;
+  ros::Rate rate(200.0);
+  while (ros::ok() && continue_async_planning_) {
+    {
+      std::unique_lock lock(mutex_);
+      if (mapper_waiting_) {
+        mapper_waiting_cv_.wait(lock,
+                                [&]() -> bool { return !mapper_waiting_; });
+      }
+      if (waverider_policy_.isReady() && world_state_.has_value()) {
+        evaluateAndPublishPolicy();
+      }
+    }
+    rate.sleep();
+  }
+  ROS_INFO("Stopped async planning.");
+}
+
+void WaveriderServer::evaluateAndPublishPolicy() {
+  ZoneScoped;
+  std::string policy_name = std::to_string(ros::Time::now().toSec());
+  std::cout << "EVAL\t" << ros::Time::now() << "\tCREATED\t" << policy_name
+            << std::endl;
+
+  // Compute the policy
+  const auto val_wavemap_r3_W =
+      waverider_policy_.evaluateAt(world_state_->r3());
+
+  // Publish the policy
+  mav_reactive_planning::PolicyValue policy_msg;
+  policy_msg.Name = policy_name;
+  policy_msg.f = std::vector<double>(
+      val_wavemap_r3_W.f_.data(),
+      val_wavemap_r3_W.f_.data() + val_wavemap_r3_W.f_.size());
+  policy_msg.A = std::vector<double>(
+      val_wavemap_r3_W.A_.data(),
+      val_wavemap_r3_W.A_.data() + val_wavemap_r3_W.A_.size());
+  std::cout << "EVAL\t" << ros::Time::now() << "\tPUBLISHING\t" << policy_name
+            << std::endl;
+
+  policy_pub_.publish(policy_msg);
+
+  // Publish debug visuals
+  static int i = 0;
+  if (++i % config_.publish_debug_visuals_every_n_iterations == 0) {
+    visualization_msgs::MarkerArray marker_array;
+    // marker_array.markers.emplace_back(generateClearingMarker());
+    addFilteredObstaclesToMarkerArray(waverider_policy_.getObstacleCells(),
+                                      config_.world_frame, marker_array);
+    marker_array.markers.emplace_back(robotPositionToMarker(
+        world_state_->p().cast<float>(), config_.world_frame));
+    debug_pub_.publish(marker_array);
+  }
 }
 
 void WaveriderServer::subscribeToTopics(ros::NodeHandle& nh) {

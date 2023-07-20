@@ -23,9 +23,7 @@ class WaveriderPolicy : public rmpcpp::PolicyBase<rmpcpp::Space<3>> {
   }
 
   void updateObstacles(const wavemap::HashedWaveletOctree& map,
-                       const wavemap::Point3D& robot_position) {
-    obstacle_filter_.update(map, robot_position);
-  }
+                       const wavemap::Point3D& robot_position);
   void updateTuning(PolicyTuning tuning) { policy_tuning_ = tuning; }
 
   bool isReady() const { return obstacle_filter_.isReady(); }

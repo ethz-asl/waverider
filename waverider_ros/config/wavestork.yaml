@@ -8,7 +8,7 @@ mapper:
       data_structure:
         type: "hashed_wavelet_octree"
         min_cell_width: { meters: 0.1 }
-        tree_height: 6
+        tree_height: 5
 
     inputs:
       - type: "pointcloud"
