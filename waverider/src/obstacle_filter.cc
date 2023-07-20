@@ -7,7 +7,7 @@ void WavemapObstacleFilter::update(const wavemap::HashedWaveletOctree& map,
 
 
   // this is the maximum distance we care about
-  f_lvl_cutoff_ = [](uint level) { return (level + 1.5); };
+  f_lvl_cutoff_ = [](uint level) { return exp((level+1.0)/2.0); };
   const double max_cutoff = f_lvl_cutoff_(6);
   if(use_only_lowest_level_) {
     // replacing a lambda.. bad style.
