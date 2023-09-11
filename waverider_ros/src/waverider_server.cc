@@ -4,6 +4,7 @@
 #include <omav_msgs/conversions.h>
 #include <omav_msgs/eigen_omav_msgs.h>
 #include <rmpcpp/geometry/partial_geometry.h>
+#include <tracy/Tracy.hpp>
 #include <visualization_msgs/MarkerArray.h>
 #include <wavemap/config/param.h>
 #include <wavemap_ros_conversions/config_conversions.h>
@@ -43,6 +44,8 @@ WaveriderServer::WaveriderServer(ros::NodeHandle nh, ros::NodeHandle nh_private,
 
 void WaveriderServer::updateMap(
     const wavemap::VolumetricDataStructureBase& map) {
+  ZoneScoped;
+
   // Get the world state
   Point3D robot_position;
   {
@@ -66,6 +69,8 @@ void WaveriderServer::updateMap(
   }
 }
 void WaveriderServer::startPlanningAsync() {
+  ZoneScoped;
+
   if (continue_async_planning_.load(std::memory_order::memory_order_relaxed)) {
     ROS_INFO("Async planning already enabled.");
     return;
@@ -78,6 +83,7 @@ void WaveriderServer::startPlanningAsync() {
 
 void WaveriderServer::currentReferenceCallback(
     const trajectory_msgs::MultiDOFJointTrajectory& trajectory_msg) {
+  ZoneScoped;
   const auto current_setpoint = trajectory_msg.points.front();
   const omav_msgs::EigenTrajectoryPoint current_setpoint_eigen =
       omav_msgs::eigenTrajectoryPointFromMsg(current_setpoint);
@@ -138,6 +144,7 @@ bool WaveriderServer::toggleServiceCallback(std_srvs::Empty::Request& /*req*/,
 }
 
 void WaveriderServer::asyncPlanningLoop() {
+  ZoneScoped;
   ros::Rate rate(200.0);
   while (ros::ok() &&
          continue_async_planning_.load(std::memory_order_relaxed)) {
@@ -148,6 +155,7 @@ void WaveriderServer::asyncPlanningLoop() {
 }
 
 void WaveriderServer::evaluateAndPublishPolicy() {
+  ZoneScoped;
   std::string policy_name = std::to_string(ros::Time::now().toSec());
   std::cout << "EVAL\t" << ros::Time::now() << "\tCREATED\t" << policy_name
             << std::endl;
