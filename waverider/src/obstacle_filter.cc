@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <mutex>
+#include <thread>
 
 namespace waverider {
 void ObstacleCells::swap(ObstacleCells& other) {
@@ -10,7 +11,16 @@ void ObstacleCells::swap(ObstacleCells& other) {
 }
 
 const ObstacleCells& WavemapObstacleFilter::getObstacleCells() {
-  // See if we can swap in the new obstacles
+  // This method is only safe to call from a single thread, warn otherwise
+  static auto last_thread_id = std::this_thread::get_id();
+  const auto current_thread_id = std::this_thread::get_id();
+  if (current_thread_id != last_thread_id) {
+    LOG(ERROR) << "Method getObstacles() should always be called from the "
+                  "same thread.";
+  }
+  last_thread_id = current_thread_id;
+
+  // See if updated obstacles are ready to be swapped in
   // NOTE: We use the double-checked locking pattern.
   if (new_obstacle_cells_.ready.load(std::memory_order_acquire)) {
     std::scoped_lock lock(new_obstacle_cells_.mutex);
@@ -24,161 +34,187 @@ const ObstacleCells& WavemapObstacleFilter::getObstacleCells() {
 }
 
 void WavemapObstacleFilter::update(const wavemap::HashedWaveletOctree& map,
-                                   const wavemap::Point3D& robot_position) {
+                                   const Point3D& robot_position) {
   std::scoped_lock lock(new_obstacle_cells_.mutex);
   new_obstacle_cells_.ready = false;
 
-  // TODO(victorr): Replace this with a clean version
-  // this is the maximum distance we care about
-  f_lvl_cutoff_ = [](uint level) -> double {
-    return std::exp((level + 1.0) / 2.0);
-  };
-  // f_lvl_cutoff_ = [](uint level) { return level+1.5; };
-  if (use_only_lowest_level_) {
-    // replacing a lambda.. bad style.
-    // its worse than i thought
-    f_lvl_cutoff_ = [](uint level) -> double {
-      return std::exp((6 + 1.0) / 2.0);
-    };
-  }
+  // Cache constants
+  min_cell_width_ = map.getMinCellWidth();
+  min_log_odds_ = map.getMinLogOdds();
+  tree_height_ = map.getTreeHeight();
+  const double max_block_distance = maxRangeForHeight(6);
 
-  const double max_cutoff = f_lvl_cutoff_(6);
-  // init debug structure
-  new_obstacle_cells_.data.centers.resize(map.getTreeHeight() + 1);
-  new_obstacle_cells_.data.cell_widths.resize(map.getTreeHeight() + 1);
-  for (int i = 0; i <= map.getTreeHeight(); ++i) {
+  // Reset counters
+  function_evals_ = 0;
+
+  // Initialize obstacle cell array
+  new_obstacle_cells_.data.centers.resize(tree_height_ + 1);
+  new_obstacle_cells_.data.cell_widths.resize(tree_height_ + 1);
+  for (int i = 0; i <= tree_height_; ++i) {
     new_obstacle_cells_.data.centers[i].clear();
     new_obstacle_cells_.data.cell_widths[i] =
-        wavemap::convert::heightToCellWidth(map.getMinCellWidth(), i);
+        wavemap::convert::heightToCellWidth(min_cell_width_, i);
   }
 
-  function_evals = 0;
-  // for now, we do these naively by doing a full check each time
-  // in the future, we could cache the AABB tree's for all blocks
-  // and simply check if there is any new block to worry about
+  // Iterate over all blocks and extract obstacles
   for (const auto& [block_idx, block] : map.getBlocks()) {
+    // Skip empty blocks
     if (block.empty()) {
-      continue;  // skip - its empty
+      continue;
     }
-    // get aabb tree for block
-    wavemap::AABB<wavemap::Point3D> W_cell_aabb =
-        wavemap::convert::nodeIndexToAABB(
-            wavemap::OctreeIndex{map.getTreeHeight(), block_idx},
-            map.getMinCellWidth());
 
-    // check if closest distance is within the radius we care about
-    double block_dist = W_cell_aabb.minDistanceTo(robot_position);
-    if (block_dist > max_cutoff) {
-      continue;  // skip this block - it's too far away
+    // Skip blocks that are too far away
+    const auto block_node_index = OctreeIndex{tree_height_, block_idx};
+    const wavemap::AABB<Point3D> W_block_aabb =
+        wavemap::convert::nodeIndexToAABB(block_node_index, min_cell_width_);
+    double block_dist = W_block_aabb.minDistanceTo(robot_position);
+    if (max_block_distance < block_dist) {
+      continue;
     }
-    // traverse block
-    recursiveObstacleFilter(
-        map, robot_position,
-        wavemap::OctreeIndex{map.getTreeHeight(), block_idx},
-        block.getRootNode(), block.getRootScale());
+
+    // Extract obstacles at the appropriate resolution
+    if (use_only_lowest_level_) {
+      // All at highest available (leaf) resolution
+      leafObstacleFilter(block_idx, block);
+    } else {
+      // Adaptive resolution
+      adaptiveObstacleFilter(robot_position, block_node_index,
+                             block.getRootNode(), block.getRootScale());
+    }
   }
-  int all_policies = 0;
-  for (int i = 0; i <= map.getTreeHeight(); ++i) {
+
+  // Print debug info
+  size_t num_policies = 0;
+  for (int i = 0; i <= tree_height_; ++i) {
     std::cout << "EVAL\t"
               << "LEVEL" << i << "\t"
               << new_obstacle_cells_.data.centers[i].size() << std::endl;
-    all_policies += new_obstacle_cells_.data.centers[i].size();
+    num_policies += new_obstacle_cells_.data.centers[i].size();
   }
   std::cout << "EVAL\t"
-            << "TOTAL\t" << all_policies << std::endl;
+            << "TOTAL\t" << num_policies << std::endl;
   std::cout << "EVAL\t"
-            << "FUNC\t" << function_evals << std::endl;
+            << "FUNC\t" << function_evals_ << std::endl;
 
+  // Indicate that the new obstacle array is ready
   new_obstacle_cells_.ready = true;
 }
 
-bool WavemapObstacleFilter::recursiveObstacleFilter(  // NOLINT
-    const wavemap::HashedWaveletOctree& map,
-    const wavemap::Point3D& robot_position,
-    const wavemap::OctreeIndex& node_index,
-    const wavemap::HashedWaveletOctreeBlock::NodeType& node,
-    const wavemap::FloatingPoint node_scale_coefficient) {
-  ++function_evals;
-  if (node_scale_coefficient < map.getMinLogOdds() + 1e-4f) {
-    return false;
+void WavemapObstacleFilter::leafObstacleFilter(
+    const HashedWaveletOctreeBlock::BlockIndex& block_index,
+    const HashedWaveletOctreeBlock& block) {
+  block.forEachLeaf(block_index, [occupancy_threshold = occupancy_threshold_,
+                                  min_cell_width = min_cell_width_,
+                                  &new_obstacle_cells =
+                                      new_obstacle_cells_.data](
+                                     const OctreeIndex& node_index,
+                                     FloatingPoint node_occupancy) {
+    if (occupancy_threshold < node_occupancy) {
+      const Point3D node_center =
+          wavemap::convert::nodeIndexToCenterPoint(node_index, min_cell_width);
+      new_obstacle_cells.centers[node_index.height].emplace_back(node_center);
+    }
+  });
+}
+
+void WavemapObstacleFilter::adaptiveObstacleFilter(  // NOLINT
+    const Point3D& robot_position, const OctreeIndex& node_index,
+    const HashedWaveletOctreeBlock::NodeType& node,
+    FloatingPoint node_occupancy) {
+  ++function_evals_;
+
+  // Skip nodes that are saturated free
+  // NOTE: Such nodes are guaranteed to have no occupied children.
+  constexpr FloatingPoint kNumericalNoise = 1e-3f;
+  if (node_occupancy < min_log_odds_ + kNumericalNoise) {
+    return;
   }
 
-  const wavemap::FloatingPoint node_width = wavemap::convert::heightToCellWidth(
-      map.getMinCellWidth(), node_index.height);
-  const Eigen::Vector3f center_point =
+  // Constants
+  const FloatingPoint node_width =
+      wavemap::convert::heightToCellWidth(min_cell_width_, node_index.height);
+  const Point3D node_center =
       wavemap::convert::indexToCenterPoint(node_index.position, node_width);
-  const bool within_search_scope =
-      (center_point - robot_position).norm() <
-      f_lvl_cutoff_(node_index.height) + sqrt(3 * node_width * node_width);
-  if (!within_search_scope) {
-    return false;
+
+  // Check if we reached the max resolution given the node's distance
+  const FloatingPoint d_robot_node = (node_center - robot_position).norm();
+  const int min_height_at_range = minHeightForRange(d_robot_node);
+  if (node_index.height <= min_height_at_range) {
+    // Add the node as an obstacle if the node itself or
+    // any of its children is occupied
+    if (occupancy_threshold_ < node_occupancy ||
+        nodeHasOccupiedChild(node, node_occupancy)) {
+      new_obstacle_cells_.data.centers[node_index.height].emplace_back(
+          node_center);
+    }
+  } else {
+    // Otherwise, keep descending the tree
+    // Decompress child values
+    const HashedWaveletOctreeBlock::Coefficients::CoefficientsArray
+        child_occupancy_array = HashedWaveletOctreeBlock::Transform::backward(
+            {node_occupancy, {node.data()}});
+
+    // Evaluate all children
+    for (wavemap::NdtreeIndexRelativeChild child_idx = 0;
+         child_idx < OctreeIndex::kNumChildren; ++child_idx) {
+      const OctreeIndex child_node_index =
+          node_index.computeChildIndex(child_idx);
+      const FloatingPoint child_occupancy = child_occupancy_array[child_idx];
+
+      // If the child node has children, recurse
+      if (node.hasChild(child_idx)) {
+        const auto& child_node = *node.getChild(child_idx);
+        adaptiveObstacleFilter(robot_position, child_node_index, child_node,
+                               child_occupancy);
+      } else {
+        // Otherwise, the node must be a leaf
+        // Add it as an obstacle if it's occupied
+        if (occupancy_threshold_ < child_occupancy) {
+          const Point3D child_center = wavemap::convert::nodeIndexToCenterPoint(
+              child_node_index, min_cell_width_);
+          new_obstacle_cells_.data.centers[child_node_index.height]
+              .emplace_back(child_center);
+        }
+      }
+    }
   }
+}
 
-  // if we make it to here, that means something is occupied and we are
-  // potentially in the region where the children could be in scope.
-  const wavemap::HashedWaveletOctreeBlock::Coefficients::CoefficientsArray
-      child_scale_coefficients =
-          wavemap::HashedWaveletOctreeBlock::Transform::backward(
-              {node_scale_coefficient, {node.data()}});
+bool WavemapObstacleFilter::nodeHasOccupiedChild(  // NOLINT
+    const HashedWaveletOctreeBlock::NodeType& parent_node,
+    FloatingPoint parent_occupancy) {
+  struct StackElement {
+    const HashedWaveletOctreeBlock::NodeType& node;
+    const FloatingPoint scale_coefficient{};
+  };
 
-  bool any_of_kids_added = false;
-  for (wavemap::NdtreeIndexRelativeChild child_idx = 0;
-       child_idx < wavemap::OctreeIndex::kNumChildren; ++child_idx) {
-    const wavemap::OctreeIndex child_node_index =
-        node_index.computeChildIndex(child_idx);
+  std::stack<StackElement> stack;
+  stack.emplace(StackElement{parent_node, parent_occupancy});
 
-    const wavemap::FloatingPoint child_scale_coefficient =
-        child_scale_coefficients[child_idx];
+  while (!stack.empty()) {
+    const HashedWaveletOctreeBlock::NodeType& node = stack.top().node;
+    const FloatingPoint node_occupancy = stack.top().scale_coefficient;
+    stack.pop();
 
-    // add all children to be visited
-    if (node.hasChild(child_idx)) {
-      const wavemap::HashedWaveletOctreeBlock::NodeType& child_node =
-          *node.getChild(child_idx);
-      any_of_kids_added |=
-          recursiveObstacleFilter(map, robot_position, child_node_index,
-                                  child_node, child_scale_coefficient);
-    } else {
-      if (child_scale_coefficient > occupancy_threshold_) {
-        const Eigen::Vector3f center_point_child =
-            wavemap::convert::nodeIndexToCenterPoint(child_node_index,
-                                                     map.getMinCellWidth());
+    const HashedWaveletOctreeBlock::Coefficients::CoefficientsArray
+        child_occupancy_array = HashedWaveletOctreeBlock::Transform::backward(
+            {node_occupancy, {node.data()}});
 
-        const wavemap::FloatingPoint child_node_width =
-            wavemap::convert::heightToCellWidth(map.getMinCellWidth(),
-                                                child_node_index.height);
-        const bool within_boundaries_child =
-            (center_point_child - robot_position).norm() <
-            f_lvl_cutoff_(child_node_index.height) +
-                sqrt(3 * child_node_width * child_node_width);
-
-        if (within_boundaries_child) {
-          // add policy!
-          obstacle_cells_.centers[child_node_index.height].emplace_back(
-              center_point_child);
-          any_of_kids_added = true;
+    for (wavemap::NdtreeIndexRelativeChild child_idx = 0;
+         child_idx < OctreeIndex::kNumChildren; ++child_idx) {
+      const FloatingPoint child_occupancy = child_occupancy_array[child_idx];
+      if (node.hasChild(child_idx)) {
+        const HashedWaveletOctreeBlock::NodeType& child_node =
+            *node.getChild(child_idx);
+        stack.emplace(StackElement{child_node, child_occupancy});
+      } else {
+        if (occupancy_threshold_ < child_occupancy) {
+          return true;
         }
       }
     }
   }
 
-  // do DFS recursion to test if any of the children are within scope and
-  // occupied if so, add those
-
-  // if not, check if itself is within scope and add if in scope
-  if (!use_only_lowest_level_ && !any_of_kids_added &&
-      node_scale_coefficient > occupancy_threshold_) {
-    // check within scope
-    const bool within_boundaries =
-        (center_point - robot_position).norm() <
-        f_lvl_cutoff_(node_index.height) + sqrt(3 * node_width * node_width);
-
-    if (within_boundaries) {
-      // add policy!
-      obstacle_cells_.centers[node_index.height].emplace_back(center_point);
-      return true;
-    }
-  }
-  // else return false - upper level should decide
-  return any_of_kids_added;
+  return false;
 }
 }  // namespace waverider

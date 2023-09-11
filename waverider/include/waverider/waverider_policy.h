@@ -12,7 +12,7 @@ class WaveriderPolicy : public rmpcpp::PolicyBase<rmpcpp::Space<3>> {
  public:
   WaveriderPolicy() = default;
 
-  void setOccupancyThreshold(wavemap::FloatingPoint value) {
+  void setOccupancyThreshold(FloatingPoint value) {
     obstacle_filter_.setOccupancyThreshold(value);
   }
   void setRunAllLevels(bool run_all_levels) {
@@ -23,7 +23,7 @@ class WaveriderPolicy : public rmpcpp::PolicyBase<rmpcpp::Space<3>> {
   }
 
   void updateObstacles(const wavemap::HashedWaveletOctree& map,
-                       const wavemap::Point3D& robot_position);
+                       const Point3D& robot_position);
   void updateTuning(PolicyTuning tuning) { policy_tuning_ = tuning; }
 
   bool isReady() const { return obstacle_filter_.isReady(); }

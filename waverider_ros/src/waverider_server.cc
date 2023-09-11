@@ -44,14 +44,15 @@ WaveriderServer::WaveriderServer(ros::NodeHandle nh, ros::NodeHandle nh_private,
 void WaveriderServer::updateMap(
     const wavemap::VolumetricDataStructureBase& map) {
   // Get the world state
-  wavemap::Point3D robot_position;
+  Point3D robot_position;
   {
     std::scoped_lock lock(world_state_.mutex);
     if (!world_state_.data.has_value()) {
-      ROS_WARN("World state not yet initialized.");
+      ROS_WARN(
+          "Robot position not yet initialized. Could not extract obstacles.");
+      return;
     }
-    robot_position =
-        world_state_.data.value().p().cast<wavemap::FloatingPoint>();
+    robot_position = world_state_.data.value().p().cast<FloatingPoint>();
   }
 
   // Extract the obstacles
@@ -160,7 +161,7 @@ void WaveriderServer::evaluateAndPublishPolicy() {
   {
     std::unique_lock lock(world_state_.mutex);
     if (!world_state_.data.has_value()) {
-      ROS_WARN("World state not yet initialized.");
+      ROS_WARN("World state not yet initialized. Could not evaluate policy.");
       return;
     }
     world_state = world_state_.data.value();
@@ -184,15 +185,17 @@ void WaveriderServer::evaluateAndPublishPolicy() {
   policy_pub_.publish(policy_msg);
 
   // Publish debug visuals
-  static int i = 0;
-  if (++i % config_.publish_debug_visuals_every_n_iterations == 0) {
-    visualization_msgs::MarkerArray marker_array;
-    // marker_array.markers.emplace_back(generateClearingMarker());
-    addFilteredObstaclesToMarkerArray(waverider_policy_.getObstacleCells(),
-                                      config_.world_frame, marker_array);
-    marker_array.markers.emplace_back(robotPositionToMarker(
-        world_state.p().cast<float>(), config_.world_frame));
-    debug_pub_.publish(marker_array);
+  if (0 < config_.publish_debug_visuals_every_n_iterations) {
+    static int i = 0;
+    if (++i % config_.publish_debug_visuals_every_n_iterations == 0) {
+      visualization_msgs::MarkerArray marker_array;
+      // marker_array.markers.emplace_back(generateClearingMarker());
+      addFilteredObstaclesToMarkerArray(waverider_policy_.getObstacleCells(),
+                                        config_.world_frame, marker_array);
+      marker_array.markers.emplace_back(robotPositionToMarker(
+          world_state.p().cast<float>(), config_.world_frame));
+      debug_pub_.publish(marker_array);
+    }
   }
 }
 

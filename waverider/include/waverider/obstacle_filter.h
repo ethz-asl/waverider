@@ -7,6 +7,8 @@
 
 #include <wavemap/data_structure/volumetric/hashed_wavelet_octree.h>
 
+#include "waverider/common.h"
+
 namespace waverider {
 struct ObstacleCells {
   std::vector<std::vector<Eigen::Vector3f>> centers;
@@ -19,24 +21,33 @@ class WavemapObstacleFilter {
  public:
   WavemapObstacleFilter() = default;
 
-  void setOccupancyThreshold(wavemap::FloatingPoint threshold) {
+  void setOccupancyThreshold(FloatingPoint threshold) {
     occupancy_threshold_ = threshold;
   }
 
   void update(const wavemap::HashedWaveletOctree& map,
-              const wavemap::Point3D& robot_position);
+              const Point3D& robot_position);
 
-  bool isReady() const { return !obstacle_cells_.centers.empty(); }
+  bool isReady() const {
+    return !obstacle_cells_.centers.empty() ||
+           new_obstacle_cells_.ready.load(std::memory_order_relaxed);
+  }
 
   // WARNING: This method also is only safe to call from a single thread,
-  //          as it also swaps in new the obstacles when available!
+  //          as it also swaps in new the obstacles when available.
   const ObstacleCells& getObstacleCells();
 
   bool use_only_lowest_level_ = false;
 
  private:
-  size_t function_evals{0};
-  wavemap::FloatingPoint occupancy_threshold_ = 0.001f;
+  using HashedWaveletOctreeBlock = wavemap::HashedWaveletOctreeBlock;
+
+  size_t function_evals_ = 0;
+  FloatingPoint occupancy_threshold_ = 0.001f;
+
+  FloatingPoint min_cell_width_ = wavemap::kNaN;
+  FloatingPoint min_log_odds_ = wavemap::kNaN;
+  int tree_height_ = -1;
 
   ObstacleCells obstacle_cells_;
   struct {
@@ -46,18 +57,27 @@ class WavemapObstacleFilter {
   } new_obstacle_cells_;
 
   // function that defines the radius we care about for each tree level
-  std::function<double(uint)> f_lvl_cutoff_;
+  static double maxRangeForHeight(int level) {
+    return std::exp((level + 1.0) / 2.0);
+  }
+  int minHeightForRange(FloatingPoint range) const {
+    const FloatingPoint range_clamped = std::max(range, 1.f);
+    return std::clamp(2 * static_cast<int>(std::log(range_clamped)) - 1, 0,
+                      tree_height_);
+  }
 
-  // recursive version -> if none of the children is to be added as a policy
-  // add itself as a policy
-  // this can happen if all the children are unoccupied or out of region of
-  // interest returns true if a policy was added
-  bool recursiveObstacleFilter(
-      const wavemap::HashedWaveletOctree& map,
-      const wavemap::Point3D& robot_position,
-      const wavemap::OctreeIndex& node_index,
-      const wavemap::HashedWaveletOctreeBlock::NodeType& node,
-      wavemap::FloatingPoint node_scale_coefficient);
+  void leafObstacleFilter(
+      const HashedWaveletOctreeBlock::BlockIndex& block_index,
+      const HashedWaveletOctreeBlock& block);
+
+  void adaptiveObstacleFilter(const Point3D& robot_position,
+                              const OctreeIndex& node_index,
+                              const HashedWaveletOctreeBlock::NodeType& node,
+                              FloatingPoint node_occupancy);
+
+  bool nodeHasOccupiedChild(
+      const HashedWaveletOctreeBlock::NodeType& parent_node,
+      FloatingPoint parent_occupancy);
 };
 }  // namespace waverider
 

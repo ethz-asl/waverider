@@ -2,7 +2,7 @@
 
 namespace waverider {
 void WaveriderPolicy::updateObstacles(const wavemap::HashedWaveletOctree& map,
-                                      const wavemap::Point3D& robot_position) {
+                                      const Point3D& robot_position) {
   obstacle_filter_.update(map, robot_position);
 }
 
