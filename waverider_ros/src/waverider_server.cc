@@ -145,7 +145,7 @@ bool WaveriderServer::toggleServiceCallback(std_srvs::Empty::Request& /*req*/,
 
 void WaveriderServer::asyncPlanningLoop() {
   ZoneScoped;
-  ros::Rate rate(200.0);
+  ros::WallRate rate(200.0);
   while (ros::ok() &&
          continue_async_planning_.load(std::memory_order_relaxed)) {
     evaluateAndPublishPolicy();
