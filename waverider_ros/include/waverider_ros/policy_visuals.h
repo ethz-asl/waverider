@@ -9,12 +9,9 @@
 #include <waverider/obstacle_filter.h>
 
 namespace waverider {
-
-
 void addFilteredObstaclesToMarkerArray(
     const ObstacleCells& policy_blocks, const std::string& world_frame,
     visualization_msgs::MarkerArray& marker_array);
-
 
 visualization_msgs::Marker generateClearingMarker();
 

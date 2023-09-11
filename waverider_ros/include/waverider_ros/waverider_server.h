@@ -74,9 +74,6 @@ class WaveriderServer {
 
 
   ros::ServiceServer srv_level_toggle_;
-
-
-
 };
 }  // namespace waverider
 
