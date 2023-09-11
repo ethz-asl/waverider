@@ -46,7 +46,7 @@ class WavemapObstacleFilter {
   FloatingPoint occupancy_threshold_ = 0.001f;
 
   FloatingPoint min_cell_width_ = wavemap::kNaN;
-  FloatingPoint min_log_odds_ = wavemap::kNaN;
+  FloatingPoint min_log_odds_shrunk_ = wavemap::kNaN;
   int tree_height_ = -1;
 
   ObstacleCells obstacle_cells_;
@@ -76,8 +76,8 @@ class WavemapObstacleFilter {
                               FloatingPoint node_occupancy);
 
   bool nodeHasOccupiedChild(
-      const HashedWaveletOctreeBlock::NodeType& parent_node,
-      FloatingPoint parent_occupancy);
+      const HashedWaveletOctreeBlock::NodeType& node,
+      FloatingPoint node_occupancy);
 };
 }  // namespace waverider
 

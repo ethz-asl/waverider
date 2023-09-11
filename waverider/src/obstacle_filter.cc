@@ -4,13 +4,18 @@
 #include <mutex>
 #include <thread>
 
+#include <tracy/Tracy.hpp>
+
 namespace waverider {
 void ObstacleCells::swap(ObstacleCells& other) {
+  ZoneScoped;
   centers.swap(other.centers);
   cell_widths.swap(other.cell_widths);
 }
 
 const ObstacleCells& WavemapObstacleFilter::getObstacleCells() {
+  ZoneScoped;
+
   // This method is only safe to call from a single thread, warn otherwise
   static auto last_thread_id = std::this_thread::get_id();
   const auto current_thread_id = std::this_thread::get_id();
@@ -35,13 +40,16 @@ const ObstacleCells& WavemapObstacleFilter::getObstacleCells() {
 
 void WavemapObstacleFilter::update(const wavemap::HashedWaveletOctree& map,
                                    const Point3D& robot_position) {
+  ZoneScoped;
+
   std::scoped_lock lock(new_obstacle_cells_.mutex);
   new_obstacle_cells_.ready = false;
 
   // Cache constants
   min_cell_width_ = map.getMinCellWidth();
-  min_log_odds_ = map.getMinLogOdds();
   tree_height_ = map.getTreeHeight();
+  constexpr FloatingPoint kNumericalNoise = 1e-3f;
+  min_log_odds_shrunk_ = map.getMinLogOdds() + kNumericalNoise;
   const double max_block_distance = maxRangeForHeight(6);
 
   // Reset counters
@@ -125,8 +133,7 @@ void WavemapObstacleFilter::adaptiveObstacleFilter(  // NOLINT
 
   // Skip nodes that are saturated free
   // NOTE: Such nodes are guaranteed to have no occupied children.
-  constexpr FloatingPoint kNumericalNoise = 1e-3f;
-  if (node_occupancy < min_log_odds_ + kNumericalNoise) {
+  if (node_occupancy < min_log_odds_shrunk_) {
     return;
   }
 
@@ -181,40 +188,27 @@ void WavemapObstacleFilter::adaptiveObstacleFilter(  // NOLINT
 }
 
 bool WavemapObstacleFilter::nodeHasOccupiedChild(  // NOLINT
-    const HashedWaveletOctreeBlock::NodeType& parent_node,
-    FloatingPoint parent_occupancy) {
-  struct StackElement {
-    const HashedWaveletOctreeBlock::NodeType& node;
-    const FloatingPoint scale_coefficient{};
-  };
+    const HashedWaveletOctreeBlock::NodeType& node,
+    FloatingPoint node_occupancy) {
+  const HashedWaveletOctreeBlock::Coefficients::CoefficientsArray
+      child_occupancy_array = HashedWaveletOctreeBlock::Transform::backward(
+          {node_occupancy, {node.data()}});
 
-  std::stack<StackElement> stack;
-  stack.emplace(StackElement{parent_node, parent_occupancy});
-
-  while (!stack.empty()) {
-    const HashedWaveletOctreeBlock::NodeType& node = stack.top().node;
-    const FloatingPoint node_occupancy = stack.top().scale_coefficient;
-    stack.pop();
-
-    const HashedWaveletOctreeBlock::Coefficients::CoefficientsArray
-        child_occupancy_array = HashedWaveletOctreeBlock::Transform::backward(
-            {node_occupancy, {node.data()}});
-
-    for (wavemap::NdtreeIndexRelativeChild child_idx = 0;
-         child_idx < OctreeIndex::kNumChildren; ++child_idx) {
-      const FloatingPoint child_occupancy = child_occupancy_array[child_idx];
+  for (wavemap::NdtreeIndexRelativeChild child_idx = 0;
+       child_idx < OctreeIndex::kNumChildren; ++child_idx) {
+    const FloatingPoint child_occupancy = child_occupancy_array[child_idx];
+    if (occupancy_threshold_ < child_occupancy) {
+      return true;
+    } else if (min_log_odds_shrunk_ < child_occupancy) {
       if (node.hasChild(child_idx)) {
         const HashedWaveletOctreeBlock::NodeType& child_node =
             *node.getChild(child_idx);
-        stack.emplace(StackElement{child_node, child_occupancy});
-      } else {
-        if (occupancy_threshold_ < child_occupancy) {
+        if (nodeHasOccupiedChild(child_node, child_occupancy)) {
           return true;
         }
       }
     }
   }
-
   return false;
 }
 }  // namespace waverider
