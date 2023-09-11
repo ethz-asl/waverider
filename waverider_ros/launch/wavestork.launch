@@ -16,7 +16,7 @@
         name="link_fastlio_msf_frame"
         args="0.0 0.0 0.0 1.0 0.0 0.0 0.0
             odom camera_init"/>
- 
+
   <!-- Run waverider -->
   <node name="waverider_server" pkg="waverider_ros"
         type="waverider_server_node"

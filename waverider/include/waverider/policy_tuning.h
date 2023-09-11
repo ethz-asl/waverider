@@ -6,9 +6,9 @@ struct PolicyTuning {
   float r = 1.3;
   float c = 0.05;
   float eta_rep = 3.4;   // n
-  float nu_rep = 0.5;     // v
+  float nu_rep = 0.5;    // v
   float eta_damp = 2.0;  // n
-  float nu_damp = 1;    // v
+  float nu_damp = 1;     // v
   bool enable_damper = true;
   bool enable_repulsor = true;
 };

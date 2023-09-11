@@ -1,28 +1,54 @@
 #include "waverider/obstacle_filter.h"
-#include<iostream>
+
+#include <iostream>
+#include <mutex>
+
 namespace waverider {
+void ObstacleCells::swap(ObstacleCells& other) {
+  centers.swap(other.centers);
+  cell_widths.swap(other.cell_widths);
+}
+
+const ObstacleCells& WavemapObstacleFilter::getObstacleCells() {
+  // See if we can swap in the new obstacles
+  // NOTE: We use the double-checked locking pattern.
+  if (new_obstacle_cells_.ready.load(std::memory_order_acquire)) {
+    std::scoped_lock lock(new_obstacle_cells_.mutex);
+    if (new_obstacle_cells_.ready.load(std::memory_order_acquire)) {
+      obstacle_cells_.swap(new_obstacle_cells_.data);
+      new_obstacle_cells_.ready.store(false, std::memory_order_release);
+    }
+  }
+
+  return obstacle_cells_;
+}
+
 void WavemapObstacleFilter::update(const wavemap::HashedWaveletOctree& map,
                                    const wavemap::Point3D& robot_position) {
+  std::scoped_lock lock(new_obstacle_cells_.mutex);
+  new_obstacle_cells_.ready = false;
 
-
-
+  // TODO(victorr): Replace this with a clean version
   // this is the maximum distance we care about
-  f_lvl_cutoff_ = [](uint level) -> double { return std::exp((level+1.0)/2.0); };
-  //f_lvl_cutoff_ = [](uint level) { return level+1.5; };
-  if(use_only_lowest_level_) {
+  f_lvl_cutoff_ = [](uint level) -> double {
+    return std::exp((level + 1.0) / 2.0);
+  };
+  // f_lvl_cutoff_ = [](uint level) { return level+1.5; };
+  if (use_only_lowest_level_) {
     // replacing a lambda.. bad style.
     // its worse than i thought
-    f_lvl_cutoff_ =  [](uint level) -> double { return std::exp((6+1.0)/2.0); };
-
+    f_lvl_cutoff_ = [](uint level) -> double {
+      return std::exp((6 + 1.0) / 2.0);
+    };
   }
 
   const double max_cutoff = f_lvl_cutoff_(6);
   // init debug structure
-  obstacle_cells_.centers.resize(map.getTreeHeight() + 1);
-  obstacle_cells_.cell_widths.resize(map.getTreeHeight() + 1);
+  new_obstacle_cells_.data.centers.resize(map.getTreeHeight() + 1);
+  new_obstacle_cells_.data.cell_widths.resize(map.getTreeHeight() + 1);
   for (int i = 0; i <= map.getTreeHeight(); ++i) {
-    obstacle_cells_.centers[i].clear();
-    obstacle_cells_.cell_widths[i] =
+    new_obstacle_cells_.data.centers[i].clear();
+    new_obstacle_cells_.data.cell_widths[i] =
         wavemap::convert::heightToCellWidth(map.getMinCellWidth(), i);
   }
 
@@ -53,12 +79,17 @@ void WavemapObstacleFilter::update(const wavemap::HashedWaveletOctree& map,
   }
   int all_policies = 0;
   for (int i = 0; i <= map.getTreeHeight(); ++i) {
-    std::cout << "EVAL\t" <<  "LEVEL"<< i<< "\t" <<obstacle_cells_.centers[i].size()<< std::endl;
-    all_policies += obstacle_cells_.centers[i].size();
+    std::cout << "EVAL\t"
+              << "LEVEL" << i << "\t"
+              << new_obstacle_cells_.data.centers[i].size() << std::endl;
+    all_policies += new_obstacle_cells_.data.centers[i].size();
   }
-  std::cout << "EVAL\t" <<  "TOTAL\t" <<all_policies<< std::endl;
-  std::cout << "EVAL\t" << "FUNC\t" << function_evals << std::endl;
+  std::cout << "EVAL\t"
+            << "TOTAL\t" << all_policies << std::endl;
+  std::cout << "EVAL\t"
+            << "FUNC\t" << function_evals << std::endl;
 
+  new_obstacle_cells_.ready = true;
 }
 
 bool WavemapObstacleFilter::recursiveObstacleFilter(  // NOLINT
@@ -67,7 +98,7 @@ bool WavemapObstacleFilter::recursiveObstacleFilter(  // NOLINT
     const wavemap::OctreeIndex& node_index,
     const wavemap::HashedWaveletOctreeBlock::NodeType& node,
     const wavemap::FloatingPoint node_scale_coefficient) {
-    ++function_evals;
+  ++function_evals;
   if (node_scale_coefficient < map.getMinLogOdds() + 1e-4f) {
     return false;
   }
@@ -134,7 +165,8 @@ bool WavemapObstacleFilter::recursiveObstacleFilter(  // NOLINT
   // occupied if so, add those
 
   // if not, check if itself is within scope and add if in scope
-  if (!use_only_lowest_level_ && !any_of_kids_added && node_scale_coefficient > occupancy_threshold_) {
+  if (!use_only_lowest_level_ && !any_of_kids_added &&
+      node_scale_coefficient > occupancy_threshold_) {
     // check within scope
     const bool within_boundaries =
         (center_point - robot_position).norm() <

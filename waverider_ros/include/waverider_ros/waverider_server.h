@@ -5,13 +5,12 @@
 #include <thread>
 
 #include <ros/ros.h>
+#include <std_srvs/Empty.h>
 #include <trajectory_msgs/MultiDOFJointTrajectory.h>
 #include <wavemap/config/config_base.h>
 #include <wavemap/data_structure/volumetric/volumetric_data_structure_base.h>
 #include <wavemap_ros/tf_transformer.h>
 #include <waverider/waverider_policy.h>
-
-#include <std_srvs/Empty.h>
 
 namespace waverider {
 struct WaveriderServerConfig : wavemap::ConfigBase<WaveriderServerConfig, 3> {
@@ -34,28 +33,32 @@ class WaveriderServer {
   void updateMap(const wavemap::VolumetricDataStructureBase& map);
 
   void startPlanningAsync();
-  void stopPlanningAsync() { continue_async_planning_ = false; }
+  void stopPlanningAsync() {
+    continue_async_planning_.store(false, std::memory_order_relaxed);
+  }
 
   // ROS interfaces
   void currentReferenceCallback(
       const trajectory_msgs::MultiDOFJointTrajectory& trajectory_msg);
   void estimateStateFromTf();
 
-  bool toggleServiceCallback(std_srvs::Empty::Request  &req,
-                                              std_srvs::Empty::Response &re);
+  bool toggleServiceCallback(std_srvs::Empty::Request& req,
+                             std_srvs::Empty::Response& re);
 
  private:
   const WaveriderServerConfig config_;
 
   // Wavemap-based obstacle avoidance policy
-  std::optional<rmpcpp::SE3State> world_state_;
+  // TODO(victorr): After submission, rewrite using atomics.
+  //                Not yet done as this requires some changes in rmpcpp.
+  struct {
+    std::optional<rmpcpp::SE3State> data;
+    std::mutex mutex;
+  } world_state_;
   WaveriderPolicy waverider_policy_;
-  std::mutex mutex_;  // Use for both world_state_ and waverider_policy_
-  std::atomic<bool> mapper_waiting_;
-  std::condition_variable mapper_waiting_cv_;
 
   // Asynchronous plan policy publishing logic
-  std::atomic<bool> continue_async_planning_ = false;
+  std::atomic<bool> continue_async_planning_{false};
   std::thread async_planning_thread_;
   void asyncPlanningLoop();
   void evaluateAndPublishPolicy();
@@ -71,7 +74,6 @@ class WaveriderServer {
   void advertiseTopics(ros::NodeHandle& nh_private);
   ros::Publisher policy_pub_;
   ros::Publisher debug_pub_;
-
 
   ros::ServiceServer srv_level_toggle_;
 };

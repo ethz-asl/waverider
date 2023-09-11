@@ -18,7 +18,7 @@ class WaveriderPolicy : public rmpcpp::PolicyBase<rmpcpp::Space<3>> {
   void setRunAllLevels(bool run_all_levels) {
     run_all_levels_ = run_all_levels;
   }
-  const ObstacleCells& getObstacleCells() const {
+  const ObstacleCells& getObstacleCells() {
     return obstacle_filter_.getObstacleCells();
   }
 
@@ -30,7 +30,7 @@ class WaveriderPolicy : public rmpcpp::PolicyBase<rmpcpp::Space<3>> {
 
   rmpcpp::PolicyValue<3> evaluateAt(const rmpcpp::State<3>& x) override;
 
- public: // hack for now
+ public:
   WavemapObstacleFilter obstacle_filter_;
   bool run_all_levels_ = true;
   PolicyTuning policy_tuning_;

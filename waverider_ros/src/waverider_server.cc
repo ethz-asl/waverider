@@ -43,35 +43,34 @@ WaveriderServer::WaveriderServer(ros::NodeHandle nh, ros::NodeHandle nh_private,
 
 void WaveriderServer::updateMap(
     const wavemap::VolumetricDataStructureBase& map) {
-  mapper_waiting_ = true;
-  std::scoped_lock lock(mutex_);
-
-  if (!world_state_.has_value()) {
-    ROS_WARN("World state not yet initialized.");
-    return;
+  // Get the world state
+  wavemap::Point3D robot_position;
+  {
+    std::scoped_lock lock(world_state_.mutex);
+    if (!world_state_.data.has_value()) {
+      ROS_WARN("World state not yet initialized.");
+    }
+    robot_position =
+        world_state_.data.value().p().cast<wavemap::FloatingPoint>();
   }
 
+  // Extract the obstacles
   if (auto hashed_map = dynamic_cast<const wavemap::HashedWaveletOctree*>(&map);
       hashed_map) {
-    const wavemap::Point3D robot_position =
-        world_state_->p().cast<wavemap::FloatingPoint>();
     waverider_policy_.updateObstacles(*hashed_map, robot_position);
   } else {
     ROS_WARN(
         "Waverider policies can currently only be extracted from maps of "
         "type wavemap::HashedWaveletOctree.");
   }
-
-  mapper_waiting_ = false;
-  mapper_waiting_cv_.notify_all();
 }
 void WaveriderServer::startPlanningAsync() {
-  if (continue_async_planning_) {
+  if (continue_async_planning_.load(std::memory_order::memory_order_relaxed)) {
     ROS_INFO("Async planning already enabled.");
     return;
   }
 
-  continue_async_planning_ = true;
+  continue_async_planning_.store(true, std::memory_order::memory_order_relaxed);
   async_planning_thread_ =
       std::thread(&WaveriderServer::asyncPlanningLoop, this);
 }
@@ -95,14 +94,16 @@ void WaveriderServer::currentReferenceCallback(
   Eigen::Vector3d wdot = current_setpoint_eigen.getAngularAcceleration_B();
 
   // Convert into world state
-  std::scoped_lock lock(mutex_);
-  world_state_.emplace();
-  world_state_->p() = T_odom_body_ref.translation();
-  world_state_->q() = T_odom_body_ref.rotation();
-  world_state_->v() = T_odom_body_ref.rotation() * v;
-  world_state_->a() = T_odom_body_ref.rotation() * vdot;
-  world_state_->w() = T_odom_body_ref.rotation() * w;
-  world_state_->dw() = T_odom_body_ref.rotation() * wdot;
+  {
+    std::scoped_lock lock(world_state_.mutex);
+    world_state_.data.emplace();
+    world_state_.data->p() = T_odom_body_ref.translation();
+    world_state_.data->q() = T_odom_body_ref.rotation();
+    world_state_.data->v() = T_odom_body_ref.rotation() * v;
+    world_state_.data->a() = T_odom_body_ref.rotation() * vdot;
+    world_state_.data->w() = T_odom_body_ref.rotation() * w;
+    world_state_.data->dw() = T_odom_body_ref.rotation() * wdot;
+  }
 }
 
 void WaveriderServer::estimateStateFromTf() {
@@ -110,15 +111,15 @@ void WaveriderServer::estimateStateFromTf() {
   if (transformer_.lookupLatestTransform(config_.world_frame,
                                          config_.get_state_from_tf_frame,
                                          T_W_R_current)) {
-    std::scoped_lock lock(mutex_);
-    world_state_.emplace();
-    world_state_->p() = T_W_R_current.getPosition().cast<double>();
-    world_state_->q() =
+    std::scoped_lock lock(world_state_.mutex);
+    world_state_.data.emplace();
+    world_state_.data->p() = T_W_R_current.getPosition().cast<double>();
+    world_state_.data->q() =
         T_W_R_current.getRotation().getRotationMatrix().cast<double>();
-    world_state_->v().setZero();
-    world_state_->a().setZero();
-    world_state_->w().setZero();
-    world_state_->dw().setZero();
+    world_state_.data->v().setZero();
+    world_state_.data->a().setZero();
+    world_state_.data->w().setZero();
+    world_state_.data->dw().setZero();
   } else {
     ROS_WARN_STREAM_THROTTLE(
         1, "Could not estimate state from TFs. Poses of frame '"
@@ -137,17 +138,9 @@ bool WaveriderServer::toggleServiceCallback(std_srvs::Empty::Request& /*req*/,
 
 void WaveriderServer::asyncPlanningLoop() {
   ros::Rate rate(200.0);
-  while (ros::ok() && continue_async_planning_) {
-    {
-      std::unique_lock lock(mutex_);
-      if (mapper_waiting_) {
-        mapper_waiting_cv_.wait(lock,
-                                [&]() -> bool { return !mapper_waiting_; });
-      }
-      if (waverider_policy_.isReady() && world_state_.has_value()) {
-        evaluateAndPublishPolicy();
-      }
-    }
+  while (ros::ok() &&
+         continue_async_planning_.load(std::memory_order_relaxed)) {
+    evaluateAndPublishPolicy();
     rate.sleep();
   }
   ROS_INFO("Stopped async planning.");
@@ -158,9 +151,23 @@ void WaveriderServer::evaluateAndPublishPolicy() {
   std::cout << "EVAL\t" << ros::Time::now() << "\tCREATED\t" << policy_name
             << std::endl;
 
+  if (!waverider_policy_.isReady()) {
+    ROS_WARN("Policy not yet initialized.");
+    return;
+  }
+
+  rmpcpp::SE3State world_state;
+  {
+    std::unique_lock lock(world_state_.mutex);
+    if (!world_state_.data.has_value()) {
+      ROS_WARN("World state not yet initialized.");
+      return;
+    }
+    world_state = world_state_.data.value();
+  }
+
   // Compute the policy
-  const auto val_wavemap_r3_W =
-      waverider_policy_.evaluateAt(world_state_->r3());
+  const auto val_wavemap_r3_W = waverider_policy_.evaluateAt(world_state.r3());
 
   // Publish the policy
   mav_reactive_planning::PolicyValue policy_msg;
@@ -184,7 +191,7 @@ void WaveriderServer::evaluateAndPublishPolicy() {
     addFilteredObstaclesToMarkerArray(waverider_policy_.getObstacleCells(),
                                       config_.world_frame, marker_array);
     marker_array.markers.emplace_back(robotPositionToMarker(
-        world_state_->p().cast<float>(), config_.world_frame));
+        world_state.p().cast<float>(), config_.world_frame));
     debug_pub_.publish(marker_array);
   }
 }
