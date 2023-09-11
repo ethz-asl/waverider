@@ -46,5 +46,5 @@ mapper:
 
 planner:
   world_frame: "odom"
-  publish_debug_visuals_every_n_iterations: 10
-  get_state_from_tf_frame: ""  # Leave blank to disable
+  publish_debug_visuals_every_n_iterations: -1
+  get_state_from_tf_frame: "body"  # Leave blank to disable

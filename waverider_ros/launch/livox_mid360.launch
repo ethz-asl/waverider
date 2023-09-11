@@ -64,5 +64,5 @@
 
   <!-- Replay a bag -->
   <node pkg="rosbag" type="play" name="rosbag_play" output="screen"
-        args="--clock -r1.0 ../data/livox_monstar_2023-06-21-20-21-41.bag"/>
+        args="--clock -q -r1.0 ../data/livox_monstar_2023-06-21-20-21-41.bag"/>
 </launch>
