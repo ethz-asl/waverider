@@ -1,6 +1,7 @@
 #ifndef WAVERIDER_OBSTACLE_FILTER_H_
 #define WAVERIDER_OBSTACLE_FILTER_H_
 
+#include <algorithm>
 #include <atomic>
 #include <utility>
 #include <vector>
@@ -75,9 +76,8 @@ class WavemapObstacleFilter {
                               const HashedWaveletOctreeBlock::NodeType& node,
                               FloatingPoint node_occupancy);
 
-  bool nodeHasOccupiedChild(
-      const HashedWaveletOctreeBlock::NodeType& node,
-      FloatingPoint node_occupancy);
+  bool nodeHasOccupiedChild(const HashedWaveletOctreeBlock::NodeType& node,
+                            FloatingPoint node_occupancy);
 };
 }  // namespace waverider
 
