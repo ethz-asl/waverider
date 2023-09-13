@@ -10,11 +10,16 @@ add_wavemap_compile_definitions_and_options()
 # Libraries
 cs_add_library(${PROJECT_NAME}
         src/policy_visuals.cc
-        src/waverider_server.cc)
+        src/waverider_server.cc
+        src/waverider_evaluator.cc)
 
 # Binaries
 cs_add_executable(waverider_server_node app/server_node.cc)
 target_link_libraries(waverider_server_node ${PROJECT_NAME})
+
+cs_add_executable(waverider_eval app/eval_node.cc)
+target_link_libraries(waverider_eval ${PROJECT_NAME})
+
 
 # Export
 cs_install()

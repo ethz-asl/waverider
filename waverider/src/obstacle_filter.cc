@@ -145,8 +145,8 @@ void WavemapObstacleFilter::adaptiveObstacleFilter(  // NOLINT
 
   // Check if we reached the max resolution given the node's distance
   const FloatingPoint d_robot_node = (node_center - robot_position).norm();
-  const int min_height_at_range = minHeightForRange(d_robot_node);
-  if (node_index.height <= min_height_at_range) {
+  //const int min_height_at_range = minHeightForRange(d_robot_node);
+  if (d_robot_node > maxRangeForHeight(node_index.height)) {
     // Add the node as an obstacle if the node itself or
     // any of its children is occupied
     if (occupancy_threshold_ < node_occupancy ||

@@ -31,12 +31,15 @@ class ParallelizedPolicy {
     return (z + tuning_.c * std::log(1 + std::exp(-2.f * tuning_.c * z)));
   }
   inline static float wr(float s, float r) {
+      if(s > r){
+          return 0;
+      }
     const float c2 = 1 / (r * r);
     const float c1 = -2 / r;
     return (static_cast<float>(c2) * s * s) + (c1 * s) + 1.f;
   }
 
-  void setR(float /*r*/) {}
+  void setR(float r) {tuning_.r = r;}
 
  private:
   PolicyTuning tuning_;

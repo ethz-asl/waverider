@@ -38,7 +38,11 @@ class WavemapObstacleFilter {
   const ObstacleCells& getObstacleCells();
 
   bool use_only_lowest_level_ = false;
+    static double maxRangeForHeight(int level) {
 
+        return std::pow(3,level/3.0)-0.25;
+        // return std::exp((level + 1.0) / 2.0);
+    }
  private:
   using HashedWaveletOctreeBlock = wavemap::HashedWaveletOctreeBlock;
 
@@ -57,9 +61,7 @@ class WavemapObstacleFilter {
   } new_obstacle_cells_;
 
   // function that defines the radius we care about for each tree level
-  static double maxRangeForHeight(int level) {
-    return std::exp((level + 1.0) / 2.0);
-  }
+
   int minHeightForRange(FloatingPoint range) const {
     const FloatingPoint range_clamped = std::max(range, 1.f);
     return std::clamp(2 * static_cast<int>(std::log(range_clamped)) - 1, 0,
