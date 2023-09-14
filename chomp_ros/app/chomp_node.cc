@@ -218,6 +218,7 @@ int main(int argc, char** argv) {
                      << ". Error: " << strerror(errno);
         return EXIT_FAILURE;
       }
+      ++run_idx;
 
       if (is_collision_free) {
         LOG(INFO) << "Solution trajectory is collision free";
