@@ -1,5 +1,6 @@
 #include "waverider_eval/waverider_evaluator.h"
 #include <wavemap_io/file_conversions.h>
+#include <wavemap_ros_conversions/map_msg_conversions.h>
 
 #include <omav_msgs/conversions.h>
 #include <omav_msgs/eigen_omav_msgs.h>
@@ -9,6 +10,7 @@
 #include <wavemap/config/param.h>
 #include <wavemap_ros_conversions/config_conversions.h>
 #include <wavemap/utils/stopwatch.h>
+#include <wavemap_msgs/Map.h>
 
 #include "waverider_ros/policy_visuals.h"
 
@@ -43,6 +45,8 @@ WaveriderEvaluator::WaveriderEvaluator(const WaveriderEvaluatorConfig& config)
 
   debug_pub_odom_ = nh.advertise<nav_msgs::Odometry>(
       "rmp_state", 1);
+
+  map_pub_ = nh.advertise<wavemap_msgs::Map>("map", 1);
 }
 
 void WaveriderEvaluator::loadMap(std::string path) {
@@ -52,6 +56,10 @@ void WaveriderEvaluator::loadMap(std::string path) {
   }
   map_ = std::dynamic_pointer_cast<wavemap::HashedWaveletOctree>(map_ptr);
   LOG(INFO) << "Map " << path << " loaded.";
+
+  wavemap_msgs::Map  map_msg;
+  wavemap::convert::mapToRosMsg(*map_ptr, "map", ros::Time::now(), map_msg);
+  map_pub_.publish(map_msg);
 }
 
 WaveriderEvaluator::Result WaveriderEvaluator::plan(Eigen::Vector3d start,
@@ -70,7 +78,8 @@ WaveriderEvaluator::Result WaveriderEvaluator::plan(Eigen::Vector3d start,
 
   WaveriderPolicy waverider_policy;
 
-  rmpcpp::TrapezoidalIntegrator<rmpcpp::State<3>> integrator(start_r3, 0.01);
+  rmpcpp::TrapezoidalIntegrator<rmpcpp::State<3>> integrator(start_r3, 0.05);
+  Eigen::Vector3d last_updated_pos = {-10000.0, -10000.0, -10000.0};
   int i =0;
   // lambda to make victor happy
   // tiny bit more efficient -> victor only slightly angry/disappointed.
@@ -84,13 +93,17 @@ WaveriderEvaluator::Result WaveriderEvaluator::plan(Eigen::Vector3d start,
 
     watch.start();
     // sum policies
-    waverider_policy.updateObstacles(*map_, state.pos_.cast<float>());
-    /*
-    visualization_msgs::MarkerArray marker_array;
-    addFilteredObstaclesToMarkerArray(waverider_policy.getObstacleCells(),
-                                       "map", marker_array);
-    debug_pub_.publish(marker_array);
-    publishState(state.pos_, state.vel_);*/
+    if((last_updated_pos - state.pos_).norm() > 0.05) {
+      waverider_policy.updateObstacles(*map_, state.pos_.cast<float>());
+      visualization_msgs::MarkerArray marker_array;
+      addFilteredObstaclesToMarkerArray(waverider_policy.getObstacleCells(),
+                                        "map", marker_array);
+      debug_pub_.publish(marker_array);
+      last_updated_pos = state.pos_;
+    }
+
+
+    publishState(state.pos_, state.vel_);
 
 
     auto waverider_result =waverider_policy.evaluateAt(state);

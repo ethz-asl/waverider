@@ -21,7 +21,7 @@ int main(int argc, char** argv) {
   waverider::WaveriderEvaluator evaluator(cfg);
 
   evaluator.loadMap("/home/mpantic/Work/waverider/meps/newer_college_math_5cm.wvmp");
-  evaluator.plan({0,0,0}, {10,4,1});
+  evaluator.plan({-47.6,14.6,-2.5}, {0.1,-30.5,-1});
 
   return 0;
 }

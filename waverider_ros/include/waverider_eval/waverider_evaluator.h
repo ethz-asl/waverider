@@ -46,6 +46,7 @@ class WaveriderEvaluator {
   ros::Publisher debug_pub_;
   ros::Publisher debug_pub_odom_;
   const WaveriderEvaluatorConfig config_;
+  ros::Publisher map_pub_;
 
   wavemap::HashedWaveletOctree::Ptr map_;
 
