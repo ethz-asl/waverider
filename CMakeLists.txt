@@ -12,3 +12,4 @@ include_directories(${CATKIN_WS_DEVEL_PATH}/include)
 # ROS interfaces and tooling
 add_subdirectory(waverider)
 add_subdirectory(waverider_ros)
+add_subdirectory(chomp_ros)
