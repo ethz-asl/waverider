@@ -10,6 +10,7 @@
 #include <wavemap/config/config_base.h>
 #include <wavemap/data_structure/volumetric/volumetric_data_structure_base.h>
 #include <wavemap_ros/tf_transformer.h>
+#include <waverider/eval_planner.h>
 #include <waverider/waverider_policy.h>
 #include <rmpcpp/policies/simple_target_policy.h>
 #include <rmpcpp/eval/integrator.h>
@@ -25,24 +26,27 @@ struct WaveriderEvaluatorConfig : wavemap::ConfigBase<WaveriderEvaluatorConfig, 
 };
 
 
-class WaveriderEvaluator {
+class WaveriderEvaluator : public waverider::EvalPlanner {
  public:
-    typedef struct {
-        bool success;
-        std::chrono::steady_clock::duration duration;
-        std::vector<Eigen::Vector3d> states_out;
-    } Result;
 
-    WaveriderEvaluator(const WaveriderEvaluatorConfig& config);
+    WaveriderEvaluator(const WaveriderEvaluatorConfig& config, bool only_highest_res);
 
   void loadMap(std::string path);
   void setTuning(/*whatever the hell we input here*/);
-  Result plan(Eigen::Vector3d start, Eigen::Vector3d end);
+  EvalPlanner::Result plan(Eigen::Vector3d start, Eigen::Vector3d end);
 
   void publishState(Eigen::Vector3d pos, Eigen::Vector3d vel);
 
- private:
+  inline std::string getName(){
+    std::string name = "WAVE";
+    if(only_highest_res_){
+      name += "OH";
+    }
+    return name;
+  }
 
+ private:
+  bool only_highest_res_ = false;
   ros::Publisher debug_pub_;
   ros::Publisher debug_pub_odom_;
   const WaveriderEvaluatorConfig config_;
@@ -50,7 +54,7 @@ class WaveriderEvaluator {
 
   wavemap::HashedWaveletOctree::Ptr map_;
 
-  size_t max_integration_steps_{4000};
+  size_t max_integration_steps_{10000};
 
 };
 }  // namespace waverider

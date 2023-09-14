@@ -5,7 +5,7 @@ namespace waverider {
 struct PolicyTuning {
   float r = 1.3;
   float c = 0.2;
-  float eta_rep = 88;   // n
+  float eta_rep = 22;   // n
   float nu_rep = 1.4;    // v
   float eta_damp = 140;  // n
   float nu_damp = 1.2;     // v

@@ -37,8 +37,8 @@ void WaveriderEvaluator::publishState(Eigen::Vector3d pos, Eigen::Vector3d vel){
     debug_pub_odom_.publish(msg);
 
 }
-WaveriderEvaluator::WaveriderEvaluator(const WaveriderEvaluatorConfig& config)
-    : config_(config.checkValid()) {
+WaveriderEvaluator::WaveriderEvaluator(const WaveriderEvaluatorConfig& config, bool only_highest_res)
+    : config_(config.checkValid()), only_highest_res_(only_highest_res) {
   ros::NodeHandle nh;
   debug_pub_ = nh.advertise<visualization_msgs::MarkerArray>(
       "filtered_obstacles", 1);
@@ -46,7 +46,7 @@ WaveriderEvaluator::WaveriderEvaluator(const WaveriderEvaluatorConfig& config)
   debug_pub_odom_ = nh.advertise<nav_msgs::Odometry>(
       "rmp_state", 1);
 
-  map_pub_ = nh.advertise<wavemap_msgs::Map>("map", 1);
+  map_pub_ = nh.advertise<wavemap_msgs::Map>("map", 1, true);
 }
 
 void WaveriderEvaluator::loadMap(std::string path) {
@@ -72,33 +72,36 @@ WaveriderEvaluator::Result WaveriderEvaluator::plan(Eigen::Vector3d start,
 
   // configure policies
   rmpcpp::SimpleTargetPolicy<rmpcpp::Space<3>> target_policy;
-  target_policy.setTuning(10.0, 15, 0.1);
+  target_policy.setTuning(10, 15, 0.01);
   target_policy.setTarget(end);
-  target_policy.setA(Eigen::Matrix3d::Identity());
+  target_policy.setA(Eigen::Matrix3d::Identity()*10);
 
   WaveriderPolicy waverider_policy;
+  if(only_highest_res_){
+    waverider_policy.run_all_levels_ = false;
+  }
+  std::vector<Eigen::Vector3d> trajectory;
 
-  rmpcpp::TrapezoidalIntegrator<rmpcpp::State<3>> integrator(start_r3, 0.05);
+  rmpcpp::TrapezoidalIntegrator<rmpcpp::State<3>> integrator(start_r3, 0.01);
   Eigen::Vector3d last_updated_pos = {-10000.0, -10000.0, -10000.0};
   int i =0;
   // lambda to make victor happy
   // tiny bit more efficient -> victor only slightly angry/disappointed.
   auto policy_sum = [&](const rmpcpp::State<3>& state) {
 
-    std::cout << "P " << state.pos_.transpose() << std::endl;
-    std::cout <<"V " <<  state.vel_.transpose() << std::endl;
+    trajectory.push_back(state.pos_);
+
     // update obstacles at current position
 
-    wavemap::Stopwatch watch;
 
-    watch.start();
+
+
     // sum policies
-    if((last_updated_pos - state.pos_).norm() > 0.05) {
-      waverider_policy.updateObstacles(*map_, state.pos_.cast<float>());
-      visualization_msgs::MarkerArray marker_array;
-      addFilteredObstaclesToMarkerArray(waverider_policy.getObstacleCells(),
-                                        "map", marker_array);
-      debug_pub_.publish(marker_array);
+    if((last_updated_pos - state.pos_).norm() > 0.1) {
+     waverider_policy.updateObstacles(*map_, state.pos_.cast<float>());
+     //visualization_msgs::MarkerArray marker_array;
+      //addFilteredObstaclesToMarkerArray(waverider_policy.getObstacleCells(),"map", marker_array);
+     // debug_pub_.publish(marker_array);
       last_updated_pos = state.pos_;
     }
 
@@ -109,12 +112,8 @@ WaveriderEvaluator::Result WaveriderEvaluator::plan(Eigen::Vector3d start,
     auto waverider_result =waverider_policy.evaluateAt(state);
     auto target_result = target_policy.evaluateAt(state);
 
-    std::cout << waverider_result.f_.transpose() << std::endl;
-    std::cout << target_result.f_.transpose() << std::endl;
-    std::cout << waverider_result.A_ << std::endl;
-    std::cout << target_result.A_ << std::endl;
-    watch.stop();
-    std::cout << "T " << watch.getLastEpisodeDuration() << " @  " << ++i << std::endl;
+
+
     // return
     return (target_result+waverider_result).f_;
   };
@@ -122,13 +121,17 @@ WaveriderEvaluator::Result WaveriderEvaluator::plan(Eigen::Vector3d start,
 
 
   WaveriderEvaluator::Result planning_result;
+  wavemap::Stopwatch watch;
+  watch.start();
   bool got_to_rest =
       integrator.integrateSteps(policy_sum, max_integration_steps_);
-  bool didnt_crash = true;
-  bool close_to_target = true;
-  //bool close_to_target = .... (finalposition - end).norm() < 0.05;
+  watch.stop();
 
-  planning_result.success = got_to_rest && didnt_crash && close_to_target;
+  planning_result.success = got_to_rest;
+  planning_result.states_out = trajectory;
+
+  planning_result.duration = std::chrono::duration_cast< std::chrono::steady_clock::duration>(std::chrono::duration<double>(watch.getLastEpisodeDuration()));
+  return planning_result;
 }
 
 }  // namespace waverider

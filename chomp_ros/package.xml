@@ -14,6 +14,7 @@
   <buildtool_depend>catkin_simple</buildtool_depend>
 
   <depend>roscpp</depend>
+  <depend>waverider</depend>
   <depend>wavemap</depend>
   <depend>wavemap_io</depend>
   <depend>wavemap_ros_conversions</depend>

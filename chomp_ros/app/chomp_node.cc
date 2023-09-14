@@ -12,7 +12,7 @@
 #include <wavemap_io/file_conversions.h>
 #include <wavemap_msgs/Map.h>
 #include <wavemap_ros_conversions/map_msg_conversions.h>
-
+#include "chomp_ros/chomp_eval_planner.h"
 #include "chomp_ros/chomp_optimizer.h"
 
 int main(int argc, char** argv) {

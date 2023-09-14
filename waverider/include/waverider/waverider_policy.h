@@ -30,6 +30,8 @@ class WaveriderPolicy : public rmpcpp::PolicyBase<rmpcpp::Space<3>> {
 
   rmpcpp::PolicyValue<3> evaluateAt(const rmpcpp::State<3>& x) override;
 
+
+
  public:
   WavemapObstacleFilter obstacle_filter_;
   bool run_all_levels_ = true;

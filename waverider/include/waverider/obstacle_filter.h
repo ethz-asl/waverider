@@ -48,7 +48,7 @@ class WavemapObstacleFilter {
   using HashedWaveletOctreeBlock = wavemap::HashedWaveletOctreeBlock;
 
   size_t function_evals_ = 0;
-  FloatingPoint occupancy_threshold_ = 0.001f;
+  FloatingPoint occupancy_threshold_ =-0.1;
 
   FloatingPoint min_cell_width_ = wavemap::kNaN;
   FloatingPoint min_log_odds_shrunk_ = wavemap::kNaN;

@@ -18,6 +18,7 @@
   <depend>std_srvs</depend>
   <depend>wavemap_ros</depend>
   <depend>waverider</depend>
+  <depend>chomp_ros</depend>
   <depend>visualization_msgs</depend>
   <depend>omav_msgs</depend>
   <depend>mav_reactive_planning</depend>

@@ -92,7 +92,7 @@ void WavemapObstacleFilter::update(const wavemap::HashedWaveletOctree& map,
   }
 
   // Print debug info
-  size_t num_policies = 0;
+ /* size_t num_policies = 0;
   for (int i = 0; i <= tree_height_; ++i) {
     std::cout << "EVAL\t"
               << "LEVEL" << i << "\t"
@@ -103,7 +103,7 @@ void WavemapObstacleFilter::update(const wavemap::HashedWaveletOctree& map,
             << "TOTAL\t" << num_policies << std::endl;
   std::cout << "EVAL\t"
             << "FUNC\t" << function_evals_ << std::endl;
-
+*/
   // Indicate that the new obstacle array is ready
   new_obstacle_cells_.ready = true;
 }

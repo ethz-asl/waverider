@@ -39,7 +39,10 @@ class ParallelizedPolicy {
     return (static_cast<float>(c2) * s * s) + (c1 * s) + 1.f;
   }
 
-  void setR(float r) {tuning_.r = r;}
+  void setR(float r) {tuning_.r = r;
+  tuning_.nu_rep = 0.5 * r;
+  tuning_.nu_damp = 0.3 * r;
+  }
 
  private:
   PolicyTuning tuning_;
