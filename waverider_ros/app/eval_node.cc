@@ -139,7 +139,7 @@ int main(int argc, char** argv) {
     return wavemap::interpolateTrilinear(*esdf, position);
   };
 
-  for (int i = 0; i < 100; ++i) {
+  for (int i = 0; i < 1000; ++i) {
     double dist = 10000;
     Eigen::Vector3d start_3d, goal_3d;
 
