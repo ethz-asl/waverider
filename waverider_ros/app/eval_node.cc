@@ -12,7 +12,7 @@ ros::Publisher trajectory_pub;
 ros::Publisher esdf_pub;
 
 int traject_id = 0;
-void publishTrajectory(std::vector<Eigen::Vector3d>& trajectory, std::vector<Eigen::Vector3d>& colors){
+void publishTrajectory(std::vector<Eigen::Vector3d>& trajectory, std::vector<Eigen::Vector3d>& colors, std::string name){
   visualization_msgs::Marker marker;
   marker.header.frame_id = "map";
   marker.header.stamp = ros::Time::now();
@@ -24,7 +24,7 @@ void publishTrajectory(std::vector<Eigen::Vector3d>& trajectory, std::vector<Eig
   marker.scale.z = 0.1;
   marker.color.a = 0.8;
   marker.pose.orientation.w = 1.0;
-  marker.ns = "traject";
+  marker.ns = name;
 
   for(int i=0; i< trajectory.size(); i+=1){
     geometry_msgs::Point pt;
@@ -119,16 +119,21 @@ int main(int argc, char** argv) {
   std::vector<waverider::EvalPlanner*> planners;
 
   auto* planner_waverider = new waverider::WaveriderEvaluator(cfg, false);
-  auto* planner_waverider_only_highres = new waverider::WaveriderEvaluator(cfg, true);
+  auto* planner_waverider_1 = new waverider::WaveriderEvaluator(cfg, true, 1.0);
+  auto* planner_waverider_3 = new waverider::WaveriderEvaluator(cfg, true, 3.0);
   auto* planner_chomp = new ChompEvalPlanner(occupancy_map, esdf);
   planner_chomp->color = {0.5, 0.5, 0.0};
   planner_waverider->loadMap(occupancy_file_path);
   planner_waverider->color = {1.0, 0,0 };
-  planner_waverider_only_highres->loadMap(occupancy_file_path);
-  planner_waverider_only_highres->color = {0.0, 1.0,0 };
+  planner_waverider_1->loadMap(occupancy_file_path);
+  planner_waverider_1->color = {0.0, 1.0,0 };
+
+  planner_waverider_3->color = {0.0, 0,1.0 };
+  planner_waverider_3->loadMap(occupancy_file_path);
   planners.push_back(planner_chomp);
   planners.push_back(planner_waverider);
-  planners.push_back(planner_waverider_only_highres);
+  planners.push_back(planner_waverider_1);
+  planners.push_back(planner_waverider_3);
 
   constexpr float kOccupancyThreshold =-0.1;
 
@@ -139,7 +144,7 @@ int main(int argc, char** argv) {
     return wavemap::interpolateTrilinear(*esdf, position);
   };
 
-  for (int i = 0; i < 1000; ++i) {
+  for (int i = 0; i < 500; ++i) {
     double dist = 10000;
     Eigen::Vector3d start_3d, goal_3d;
 
@@ -239,7 +244,7 @@ int main(int argc, char** argv) {
                 <<  "\t" << is_collision_free<<  std::endl;
 
 
-        publishTrajectory(result.states_out, colors );
+        publishTrajectory(result.states_out, colors, planner->getName());
 
     }
   }

@@ -39,6 +39,7 @@ class WavemapObstacleFilter {
   const ObstacleCells& getObstacleCells();
 
   bool use_only_lowest_level_ = false;
+  double lowest_level_radius_ {3.0};
     static double maxRangeForHeight(int level) {
 
         return std::pow(3,level/3.0)-0.25;
@@ -71,7 +72,7 @@ class WavemapObstacleFilter {
 
   void leafObstacleFilter(
       const HashedWaveletOctreeBlock::BlockIndex& block_index,
-      const HashedWaveletOctreeBlock& block);
+      const HashedWaveletOctreeBlock& block, Point3D robot_pos);
 
   void adaptiveObstacleFilter(const Point3D& robot_position,
                               const OctreeIndex& node_index,

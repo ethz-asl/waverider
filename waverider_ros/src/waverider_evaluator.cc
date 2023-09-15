@@ -37,8 +37,8 @@ void WaveriderEvaluator::publishState(Eigen::Vector3d pos, Eigen::Vector3d vel){
     debug_pub_odom_.publish(msg);
 
 }
-WaveriderEvaluator::WaveriderEvaluator(const WaveriderEvaluatorConfig& config, bool only_highest_res)
-    : config_(config.checkValid()), only_highest_res_(only_highest_res) {
+WaveriderEvaluator::WaveriderEvaluator(const WaveriderEvaluatorConfig& config, bool flat_res, double flat_res_radius)
+    : config_(config.checkValid()), flat_res_(flat_res), flat_res_radius_{flat_res_radius} {
   ros::NodeHandle nh;
   debug_pub_ = nh.advertise<visualization_msgs::MarkerArray>(
       "filtered_obstacles", 1);
@@ -77,8 +77,10 @@ WaveriderEvaluator::Result WaveriderEvaluator::plan(Eigen::Vector3d start,
   target_policy.setA(Eigen::Matrix3d::Identity()*10);
 
   WaveriderPolicy waverider_policy;
-  if(only_highest_res_){
+  if(flat_res_){
     waverider_policy.run_all_levels_ = false;
+    waverider_policy.obstacle_filter_.lowest_level_radius_ = flat_res_radius_;
+    waverider_policy.obstacle_filter_.use_only_lowest_level_ = true;
   }
   std::vector<Eigen::Vector3d> trajectory;
 

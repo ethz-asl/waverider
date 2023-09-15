@@ -29,7 +29,7 @@ struct WaveriderEvaluatorConfig : wavemap::ConfigBase<WaveriderEvaluatorConfig, 
 class WaveriderEvaluator : public waverider::EvalPlanner {
  public:
 
-    WaveriderEvaluator(const WaveriderEvaluatorConfig& config, bool only_highest_res);
+    WaveriderEvaluator(const WaveriderEvaluatorConfig& config,  bool flat_res, double flat_res_radius = 0.0);
 
   void loadMap(std::string path);
   void setTuning(/*whatever the hell we input here*/);
@@ -39,14 +39,17 @@ class WaveriderEvaluator : public waverider::EvalPlanner {
 
   inline std::string getName(){
     std::string name = "WAVE";
-    if(only_highest_res_){
-      name += "OH";
+
+    if(flat_res_){
+      name += "FR";
+      name+= std::to_string((int)std::round(flat_res_radius_));
     }
     return name;
   }
 
  private:
-  bool only_highest_res_ = false;
+  bool flat_res_ = false;
+  double flat_res_radius_ = 0.0;
   ros::Publisher debug_pub_;
   ros::Publisher debug_pub_odom_;
   const WaveriderEvaluatorConfig config_;
