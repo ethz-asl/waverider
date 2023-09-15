@@ -18,6 +18,7 @@
 #include <wavemap_io/file_conversions.h>
 #include <wavemap_msgs/Map.h>
 #include <wavemap_ros_conversions/map_msg_conversions.h>
+#include <wavemap/utils/stopwatch.h>
 
 #include "chomp_ros/chomp_optimizer.h"
 #include <waverider/eval_planner.h>
@@ -68,11 +69,17 @@ public:
 
         chomp::ChompTrajectory chomp_output;
 
+        wavemap::Stopwatch watch;
+        watch.start();
         int N = 500;
         chomp.solveProblem(start, end, N,
                            &chomp_output);
 
+        watch.stop();
         Result result;
+        result.duration = std::chrono::duration_cast< std::chrono::steady_clock::duration>(std::chrono::duration<double>(watch.getLastEpisodeDuration()));
+
+
 
         result.states_out.resize(chomp_output.trajectory.rows());
         for (int idx = 0; idx < chomp_output.trajectory.rows(); ++idx) {
