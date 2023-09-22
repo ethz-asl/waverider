@@ -65,7 +65,7 @@ int main(int argc, char** argv) {
 
   // load map and ESDF
   std::string occupancy_file_path =
-      "/home/mpantic/Work/waverider/meps/newer_college_math_10cm.wvmp";
+      "/home/mpantic/Work/waverider/meps/newer_college_mine_10cm.wvmp";
   wavemap::VolumetricDataStructureBase::Ptr occupancy_map;
   wavemap::io::fileToMap(occupancy_file_path, occupancy_map);
 
@@ -150,13 +150,13 @@ int main(int argc, char** argv) {
 
     while(dist > 30.0 || dist < 5.0) {
       wavemap::AABB<wavemap::Point3D> bounding_start;
-      bounding_start.max = {30, 40, 0};
-      bounding_start.min = {-50, 15, -3};
+      bounding_start.max = {18.8, 3, 4};
+      bounding_start.min = {-2.5, -12.5, -3};
 
       const auto start =
-          wavemap::getCollisionFreePosition(*occupancy_map, *esdf, 1, bounding_start);
+          wavemap::getCollisionFreePosition(*occupancy_map, *esdf, 1,bounding_start);
       const auto goal =
-          wavemap::getCollisionFreePosition(*occupancy_map, *esdf, 1, bounding_start);
+          wavemap::getCollisionFreePosition(*occupancy_map, *esdf, 1,bounding_start);
 
       if(start && goal){
 
@@ -239,7 +239,7 @@ int main(int argc, char** argv) {
       }
       log_file_ostream.close();
 
-      std::cout << "EVAL " << planner->getName() + std::to_string(i)+"_" << "\t" << result.success << "\t"
+      std::cout << "EVAL " << planner->getName()+"_" + std::to_string(i) << "\t" << result.success << "\t"
                 << ((double)result.duration.count())/1e9 << "\t" << result.states_out.size() << "\t" << goal_dist
                 <<  "\t" << is_collision_free<<  std::endl;
 
